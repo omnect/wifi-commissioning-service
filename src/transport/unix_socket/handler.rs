@@ -4,24 +4,32 @@ use std::sync::Arc;
 
 use crate::{
     backend::WifiBackend,
-    core::{authorization::AuthorizationService, scanner::ScanService},
+    core::{
+        authorization::AuthorizationService, connector::ConnectionService, scanner::ScanService,
+    },
     protocol::{
-        JsonRpcError, JsonRpcRequest, JsonRpcResponse, Request, RequestId, Response,
-        ScanResultsResponse, ScanStartedResponse,
+        ConnectResponse, DisconnectResponse, JsonRpcError, JsonRpcRequest, JsonRpcResponse,
+        Request, RequestId, Response, ScanResultsResponse, ScanStartedResponse, StatusResponse,
     },
 };
 
 /// JSON-RPC request handler
 pub struct RequestHandler<B: WifiBackend> {
     scan_service: Arc<ScanService<B>>,
+    connect_service: Arc<ConnectionService<B>>,
     _auth_service: Arc<AuthorizationService>,
 }
 
 impl<B: WifiBackend> RequestHandler<B> {
     /// Create a new request handler
-    pub fn new(scan_service: Arc<ScanService<B>>, auth_service: Arc<AuthorizationService>) -> Self {
+    pub fn new(
+        scan_service: Arc<ScanService<B>>,
+        connect_service: Arc<ConnectionService<B>>,
+        auth_service: Arc<AuthorizationService>,
+    ) -> Self {
         Self {
             scan_service,
+            connect_service,
             _auth_service: auth_service,
         }
     }
@@ -31,7 +39,7 @@ impl<B: WifiBackend> RequestHandler<B> {
         match request.request {
             Request::Scan => self.handle_scan(request.id).await,
             Request::GetScanResults => self.handle_get_scan_results(request.id).await,
-            Request::Connect(_params) => self.handle_connect(request.id).await,
+            Request::Connect(params) => self.handle_connect(request.id, params).await,
             Request::Disconnect => self.handle_disconnect(request.id).await,
             Request::GetStatus => self.handle_get_status(request.id).await,
         }
@@ -68,19 +76,47 @@ impl<B: WifiBackend> RequestHandler<B> {
         }
     }
 
-    async fn handle_connect(&self, id: RequestId) -> JsonRpcResponse {
-        // TODO: Implement connection handling
-        JsonRpcResponse::error(JsonRpcError::internal_error("Not implemented"), id)
+    async fn handle_connect(
+        &self,
+        id: RequestId,
+        params: crate::protocol::ConnectParams,
+    ) -> JsonRpcResponse {
+        // Decode PSK
+        let psk = match params.decode_psk() {
+            Ok(psk) => psk,
+            Err(e) => {
+                return JsonRpcResponse::error(JsonRpcError::invalid_params(e), id);
+            }
+        };
+
+        // Attempt connection
+        match self.connect_service.connect(&params.ssid, &psk).await {
+            Ok(()) => {
+                let state = self.connect_service.state().await;
+                JsonRpcResponse::success(Response::Connect(ConnectResponse::ok(state)), id)
+            }
+            Err(e) => {
+                let error = match e {
+                    crate::core::error::ServiceError::OperationInProgress => {
+                        JsonRpcError::scan_in_progress()
+                    }
+                    _ => JsonRpcError::backend_error(e.to_string()),
+                };
+                JsonRpcResponse::error(error, id)
+            }
+        }
     }
 
     async fn handle_disconnect(&self, id: RequestId) -> JsonRpcResponse {
-        // TODO: Implement disconnect handling
-        JsonRpcResponse::error(JsonRpcError::internal_error("Not implemented"), id)
+        match self.connect_service.disconnect().await {
+            Ok(()) => JsonRpcResponse::success(Response::Disconnect(DisconnectResponse::ok()), id),
+            Err(e) => JsonRpcResponse::error(JsonRpcError::backend_error(e.to_string()), id),
+        }
     }
 
     async fn handle_get_status(&self, id: RequestId) -> JsonRpcResponse {
-        // TODO: Implement status handling
-        JsonRpcResponse::error(JsonRpcError::internal_error("Not implemented"), id)
+        let status = self.connect_service.status().await;
+        JsonRpcResponse::success(Response::Status(StatusResponse::ok(status)), id)
     }
 }
 
@@ -102,8 +138,9 @@ mod tests {
             .await;
 
         let scan_service = Arc::new(ScanService::new(backend.clone()));
+        let connect_service = Arc::new(ConnectionService::new(backend.clone()));
         let auth_service = Arc::new(AuthorizationService::new("test-device".to_string()));
-        let handler = RequestHandler::new(scan_service, auth_service);
+        let handler = RequestHandler::new(scan_service, connect_service, auth_service);
 
         let request = JsonRpcRequest::new(Request::Scan, RequestId::Number(1));
         let response = handler.handle_request(request).await;
@@ -117,8 +154,9 @@ mod tests {
     async fn test_handle_scan_in_progress() {
         let backend = Arc::new(MockWifiBackend::new());
         let scan_service = Arc::new(ScanService::new(backend.clone()));
+        let connect_service = Arc::new(ConnectionService::new(backend.clone()));
         let auth_service = Arc::new(AuthorizationService::new("test-device".to_string()));
-        let handler = RequestHandler::new(scan_service.clone(), auth_service);
+        let handler = RequestHandler::new(scan_service.clone(), connect_service, auth_service);
 
         // Start first scan
         scan_service.start_scan().await.unwrap();
@@ -147,8 +185,9 @@ mod tests {
             .await;
 
         let scan_service = Arc::new(ScanService::new(backend.clone()));
+        let connect_service = Arc::new(ConnectionService::new(backend.clone()));
         let auth_service = Arc::new(AuthorizationService::new("test-device".to_string()));
-        let handler = RequestHandler::new(scan_service.clone(), auth_service);
+        let handler = RequestHandler::new(scan_service.clone(), connect_service, auth_service);
 
         // Start and complete scan
         scan_service.start_scan().await.unwrap();

@@ -10,11 +10,16 @@ use tracing::{error, info, warn};
 
 use crate::{
     backend::WifiBackend,
-    core::{authorization::AuthorizationService, scanner::ScanService},
+    core::{
+        authorization::AuthorizationService, connector::ConnectionService, scanner::ScanService,
+    },
     protocol::{JsonRpcNotification, JsonRpcRequest},
 };
 
-use super::{handler::RequestHandler, session::SessionReader, session::UnixSocketSession};
+use super::{
+    handler::RequestHandler,
+    session::{SessionReader, UnixSocketSession},
+};
 
 /// Unix socket server
 pub struct UnixSocketServer<B: WifiBackend> {
@@ -28,9 +33,14 @@ impl<B: WifiBackend> UnixSocketServer<B> {
     pub fn new(
         socket_path: String,
         scan_service: Arc<ScanService<B>>,
+        connect_service: Arc<ConnectionService<B>>,
         auth_service: Arc<AuthorizationService>,
     ) -> Self {
-        let handler = Arc::new(RequestHandler::new(scan_service, auth_service));
+        let handler = Arc::new(RequestHandler::new(
+            scan_service,
+            connect_service,
+            auth_service,
+        ));
         let (notification_tx, _) = broadcast::channel(100);
 
         Self {
@@ -123,12 +133,14 @@ mod tests {
         let socket_path = dir.path().join("test.sock");
 
         let backend = Arc::new(MockWifiBackend::new());
-        let scan_service = Arc::new(ScanService::new(backend));
+        let scan_service = Arc::new(ScanService::new(backend.clone()));
+        let connect_service = Arc::new(ConnectionService::new(backend));
         let auth_service = Arc::new(AuthorizationService::new("test".to_string()));
 
         let _server = UnixSocketServer::new(
             socket_path.to_str().unwrap().to_string(),
             scan_service,
+            connect_service,
             auth_service,
         );
 
@@ -152,12 +164,14 @@ mod tests {
             }])
             .await;
 
-        let scan_service = Arc::new(ScanService::new(backend));
+        let scan_service = Arc::new(ScanService::new(backend.clone()));
+        let connect_service = Arc::new(ConnectionService::new(backend));
         let auth_service = Arc::new(AuthorizationService::new("test".to_string()));
 
         let server = UnixSocketServer::new(
             socket_path.to_str().unwrap().to_string(),
             scan_service,
+            connect_service,
             auth_service,
         );
 
