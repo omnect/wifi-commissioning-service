@@ -78,7 +78,7 @@ impl From<ConnectionState> for u8 {
 }
 
 /// Connection status with optional IP address
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectionStatus {
     /// Current connection state
     pub state: ConnectionState,
