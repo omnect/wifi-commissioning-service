@@ -1,0 +1,40 @@
+[package]
+name = "wifi-commissioning"
+version = "0.5.0"
+edition = "2024"
+authors = ["jan.zachmann@conplement.de"]
+license = "MIT OR Apache-2.0"
+description = "WiFi commissioning service with BLE GATT and Unix socket interfaces"
+repository = "https://github.com/yourusername/wifi-commissioning-gatt-service"
+
+[[bin]]
+name = "wifi-commissioning"
+path = "src/main.rs"
+
+[lib]
+name = "wifi_commissioning"
+path = "src/lib.rs"
+
+[dependencies]
+bluer = { version = "0.17", default-features = false }
+clap = { version = "4.5", default-features = false, features = ["derive", "std"] }
+futures = { version = "0.3", default-features = false }
+sd-notify = { version = "0.4", default-features = false, optional = true }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+sha3 = { version = "0.10", default-features = false }
+thiserror = { version = "1.0", default-features = false }
+tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process", "signal"] }
+tracing = { version = "0.1", default-features = false }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std", "registry"] }
+uuid = { version = "1.0", default-features = false, features = ["v4", "serde"] }
+wpactrl = { version = "0.5", default-features = false }
+
+[dev-dependencies]
+pretty_assertions = { version = "1.0", default-features = false, features = ["std"] }
+tempfile = { version = "3.0", default-features = false }
+tokio-test = { version = "0.4", default-features = false }
+
+[features]
+default = []
+systemd = ["sd-notify"]
