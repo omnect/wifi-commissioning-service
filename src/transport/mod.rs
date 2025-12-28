@@ -1,5 +1,6 @@
 //! Transport layer abstraction
 
 pub mod ble;
+pub mod unix_socket;
 
-// TODO: Implement unix_socket module and Transport trait
+// TODO: Implement Transport trait

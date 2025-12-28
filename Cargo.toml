@@ -24,7 +24,7 @@ serde = { version = "1.0", default-features = false, features = ["derive", "allo
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 sha3 = { version = "0.10", default-features = false }
 thiserror = { version = "1.0", default-features = false }
-tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process", "signal"] }
+tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process", "signal", "fs"] }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std", "registry"] }
 trait-variant = { version = "0.1", default-features = false }
