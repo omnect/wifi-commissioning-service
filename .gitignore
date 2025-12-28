@@ -12,3 +12,6 @@
 
 # Build recipes (external)
 *.bb
+
+# Claude Code context
+CLAUDE.md

@@ -11,6 +11,7 @@ pub mod protocol;
 pub mod transport;
 pub mod util;
 
-// Re-export commonly used types
-pub use crate::core::error::{ServiceError, TransportError, WifiError};
-pub use crate::core::types::{ConnectionState, ConnectionStatus, ScanState, WifiNetwork};
+pub use core::{
+    error::{ServiceError, TransportError, WifiError},
+    types::{ConnectionState, ConnectionStatus, ScanState, WifiNetwork},
+};

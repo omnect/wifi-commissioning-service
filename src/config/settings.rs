@@ -1,6 +1,6 @@
 //! Runtime settings
 
-use crate::config::cli::CliArgs;
+use crate::config::CliArgs;
 
 /// Runtime configuration settings
 #[derive(Debug, Clone)]

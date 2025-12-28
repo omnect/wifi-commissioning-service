@@ -1,5 +1,7 @@
 //! WiFi backend trait definition
 
+use trait_variant::make;
+
 use crate::core::error::WifiResult;
 use crate::core::types::{ConnectionStatus, WifiNetwork};
 
@@ -7,8 +9,8 @@ use crate::core::types::{ConnectionStatus, WifiNetwork};
 ///
 /// This trait enables testing by allowing mock implementations
 /// while providing a standard interface for WiFi operations.
-#[allow(async_fn_in_trait)]
-pub trait WifiBackend: Send + Sync {
+#[make(Send)]
+pub trait WifiBackend: Sync + 'static {
     /// Scan for available WiFi networks
     ///
     /// This triggers a scan and returns the discovered networks.

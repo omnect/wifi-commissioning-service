@@ -3,9 +3,13 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use crate::backend::WifiBackend;
-use crate::core::error::{WifiError, WifiResult};
-use crate::core::types::{ConnectionState, ConnectionStatus, WifiNetwork};
+use crate::{
+    backend::WifiBackend,
+    core::{
+        error::{WifiError, WifiResult},
+        types::{ConnectionState, ConnectionStatus, WifiNetwork},
+    },
+};
 
 /// Internal state for the mock backend
 #[derive(Debug, Clone)]

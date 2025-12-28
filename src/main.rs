@@ -3,8 +3,7 @@
 use clap::Parser;
 use tracing::info;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-use wifi_commissioning::config::cli::CliArgs;
+use wifi_commissioning::config::CliArgs;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
