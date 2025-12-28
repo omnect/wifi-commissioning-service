@@ -1,3 +1,5 @@
 //! Transport layer abstraction
 
-// TODO: Implement transport trait and BLE/Unix socket implementations
+pub mod ble;
+
+// TODO: Implement unix_socket module and Transport trait
