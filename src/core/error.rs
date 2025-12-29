@@ -2,7 +2,7 @@
 
 use thiserror::Error;
 
-use super::types::ScanState;
+use crate::core::types::ScanState;
 
 /// Result type for WiFi backend operations
 pub type WifiResult<T> = Result<T, WifiError>;

@@ -23,7 +23,7 @@ The service provides a clean architecture with separation of concerns, comprehen
 - **Backend Abstraction**: `WifiBackend` trait with `wpactrl` implementation
 - **Dual Transports**: BLE GATT and Unix socket with shared service layer
 - **State Machines**: Explicit state management for scan and connection workflows
-- **Protocol Layer**: JSON-RPC 2.0 for Unix socket, backwards-compatible GATT protocol for BLE
+- **Protocol Layer**: JSON-RPC 2.0 for Unix socket, GATT protocol for BLE
 
 ### Module Structure
 

@@ -14,11 +14,10 @@ use crate::{
         authorization::AuthorizationService, connector::ConnectionService, scanner::ScanService,
     },
     protocol::{JsonRpcNotification, JsonRpcRequest},
-};
-
-use super::{
-    handler::RequestHandler,
-    session::{SessionReader, UnixSocketSession},
+    transport::unix_socket::{
+        handler::RequestHandler,
+        session::{SessionReader, UnixSocketSession},
+    },
 };
 
 /// Unix socket server

@@ -11,9 +11,8 @@ use crate::{
         service::WifiCommissioningService,
         types::{ConnectionState, ScanState},
     },
+    transport::ble::{session::BleSession, uuids::MAX_CHUNK_SIZE},
 };
-
-use super::{session::BleSession, uuids::MAX_CHUNK_SIZE};
 
 /// Characteristic handler for BLE operations
 pub struct CharacteristicHandler<B: WifiBackend> {

@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::{notification::Notification, request::Request, response::Response};
+use crate::protocol::{notification::Notification, request::Request, response::Response};
 
 /// JSON-RPC 2.0 request wrapper
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

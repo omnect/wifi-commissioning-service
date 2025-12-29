@@ -6,9 +6,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-use crate::backend::WifiBackend;
-
-use super::{gatt::GattServer, session::BleSession};
+use crate::{
+    backend::WifiBackend,
+    transport::ble::{gatt::GattServer, session::BleSession},
+};
 
 /// BLE transport adapter
 pub struct BleAdapter<B: WifiBackend> {

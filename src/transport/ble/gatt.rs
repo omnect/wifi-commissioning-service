@@ -11,9 +11,11 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
 
-use crate::{backend::WifiBackend, core::service::WifiCommissioningService};
-
-use super::{characteristics::CharacteristicHandler, session::BleSession, uuids::*};
+use crate::{
+    backend::WifiBackend,
+    core::service::WifiCommissioningService,
+    transport::ble::{characteristics::CharacteristicHandler, session::BleSession, uuids::*},
+};
 
 /// GATT server for WiFi commissioning
 pub struct GattServer<B: WifiBackend> {
