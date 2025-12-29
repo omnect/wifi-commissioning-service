@@ -266,6 +266,27 @@ python3 -m http.server 8000
 The Web BLE client allows browser-based testing of the BLE GATT protocol.
 See [examples/web-ble-client/README.md](examples/web-ble-client/README.md) for detailed usage instructions.
 
+### Unix Socket Client
+
+For testing the JSON-RPC 2.0 interface over Unix socket:
+
+```bash
+cd examples/unix-socket-client
+
+# Using the helper script
+./wifi-client.sh scan
+./wifi-client.sh list
+./wifi-client.sh connect "MyNetwork" "password123"
+
+# Or raw curl commands
+curl --unix-socket /var/run/wifi-commissioning.sock \
+  -d '{"jsonrpc":"2.0","method":"scan","id":1}' \
+  http://localhost/
+```
+
+The Unix socket client provides command-line access to all WiFi commissioning functions.
+See [examples/unix-socket-client/README.md](examples/unix-socket-client/README.md) for detailed usage instructions.
+
 ### Unit and Integration Tests
 
 The project includes 101 comprehensive tests covering:
