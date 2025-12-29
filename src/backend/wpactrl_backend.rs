@@ -29,16 +29,6 @@ impl WpactrlBackend {
         }
     }
 
-    /// Create wpactrl client instance
-    fn connect(&self) -> WifiResult<Client> {
-        Client::builder()
-            .ctrl_path(&self.ctrl_socket)
-            .open()
-            .map_err(|e| {
-                WifiError::WpaSupplicantError(format!("Failed to connect to wpa_supplicant: {}", e))
-            })
-    }
-
     /// Parse scan results from wpa_supplicant output
     fn parse_scan_results(output: &str) -> Vec<WifiNetwork> {
         let mut networks = Vec::new();
@@ -133,8 +123,15 @@ impl WpactrlBackend {
 
     /// Get SSID of connected network
     async fn get_connected_ssid(&self) -> Option<String> {
-        let mut ctrl = self.connect().ok()?;
-        let status = ctrl.request("STATUS").ok()?;
+        let ctrl_socket = self.ctrl_socket.clone();
+
+        let status = tokio::task::spawn_blocking(move || {
+            let mut ctrl = Client::builder().ctrl_path(&ctrl_socket).open().ok()?;
+
+            ctrl.request("STATUS").ok()
+        })
+        .await
+        .ok()??;
 
         for line in status.lines() {
             if let Some(stripped) = line.strip_prefix("ssid=") {
@@ -158,19 +155,49 @@ impl WifiBackend for WpactrlBackend {
             )));
         }
 
-        let mut ctrl = self.connect()?;
+        let ctrl_socket = self.ctrl_socket.clone();
 
-        // Trigger scan
-        ctrl.request("SCAN")
-            .map_err(|e| WifiError::WpaSupplicantError(format!("Failed to start scan: {}", e)))?;
+        // Trigger scan in blocking thread
+        tokio::task::spawn_blocking(move || {
+            let mut ctrl = Client::builder()
+                .ctrl_path(&ctrl_socket)
+                .open()
+                .map_err(|e| {
+                    WifiError::WpaSupplicantError(format!(
+                        "Failed to connect to wpa_supplicant: {}",
+                        e
+                    ))
+                })?;
+
+            ctrl.request("SCAN")
+                .map_err(|e| WifiError::WpaSupplicantError(format!("Failed to start scan: {}", e)))
+        })
+        .await
+        .map_err(|e| WifiError::WpaSupplicantError(format!("Task join error: {}", e)))??;
 
         // Wait for scan to complete
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
 
-        // Get scan results
-        let results = ctrl.request("SCAN_RESULTS").map_err(|e| {
-            WifiError::WpaSupplicantError(format!("Failed to get scan results: {}", e))
-        })?;
+        let ctrl_socket = self.ctrl_socket.clone();
+
+        // Get scan results in blocking thread
+        let results = tokio::task::spawn_blocking(move || {
+            let mut ctrl = Client::builder()
+                .ctrl_path(&ctrl_socket)
+                .open()
+                .map_err(|e| {
+                    WifiError::WpaSupplicantError(format!(
+                        "Failed to connect to wpa_supplicant: {}",
+                        e
+                    ))
+                })?;
+
+            ctrl.request("SCAN_RESULTS").map_err(|e| {
+                WifiError::WpaSupplicantError(format!("Failed to get scan results: {}", e))
+            })
+        })
+        .await
+        .map_err(|e| WifiError::WpaSupplicantError(format!("Task join error: {}", e)))??;
 
         let networks = Self::parse_scan_results(&results);
         debug!("Scan complete, found {} networks", networks.len());
@@ -179,66 +206,114 @@ impl WifiBackend for WpactrlBackend {
     }
 
     async fn connect(&self, ssid: &str, psk: &[u8; 32]) -> WifiResult<()> {
-        debug!("Connecting to network: {}", ssid);
+        let ssid_str = ssid.to_string();
+        debug!("Connecting to network: {}", ssid_str);
 
-        let mut ctrl = self.connect()?;
+        let ctrl_socket = self.ctrl_socket.clone();
+        let psk = *psk;
 
-        // Convert PSK to hex string
-        let psk_hex = hex::encode(psk);
+        tokio::task::spawn_blocking(move || {
+            let ssid = ssid_str;
+            let mut ctrl = Client::builder()
+                .ctrl_path(&ctrl_socket)
+                .open()
+                .map_err(|e| {
+                    WifiError::WpaSupplicantError(format!(
+                        "Failed to connect to wpa_supplicant: {}",
+                        e
+                    ))
+                })?;
 
-        // Add network
-        let network_id = ctrl
-            .request("ADD_NETWORK")
-            .map_err(|e| WifiError::WpaSupplicantError(format!("Failed to add network: {}", e)))?
-            .trim()
-            .to_string();
+            // Convert PSK to hex string
+            let psk_hex = hex::encode(psk);
 
-        // Set SSID
-        ctrl.request(&format!("SET_NETWORK {} ssid \"{}\"", network_id, ssid))
-            .map_err(|e| {
-                WifiError::WpaSupplicantError(format!("Failed to set network SSID: {}", e))
-            })?;
+            // Add network
+            let network_id = ctrl
+                .request("ADD_NETWORK")
+                .map_err(|e| {
+                    WifiError::WpaSupplicantError(format!("Failed to add network: {}", e))
+                })?
+                .trim()
+                .to_string();
 
-        // Set PSK
-        ctrl.request(&format!("SET_NETWORK {} psk {}", network_id, psk_hex))
-            .map_err(|e| {
-                WifiError::WpaSupplicantError(format!("Failed to set network PSK: {}", e))
-            })?;
+            // Set SSID
+            ctrl.request(&format!("SET_NETWORK {} ssid \"{}\"", network_id, ssid))
+                .map_err(|e| {
+                    WifiError::WpaSupplicantError(format!("Failed to set network SSID: {}", e))
+                })?;
 
-        // Enable network
-        ctrl.request(&format!("ENABLE_NETWORK {}", network_id))
-            .map_err(|e| {
-                WifiError::WpaSupplicantError(format!("Failed to enable network: {}", e))
-            })?;
+            // Set PSK
+            ctrl.request(&format!("SET_NETWORK {} psk {}", network_id, psk_hex))
+                .map_err(|e| {
+                    WifiError::WpaSupplicantError(format!("Failed to set network PSK: {}", e))
+                })?;
 
-        // Select network
-        ctrl.request(&format!("SELECT_NETWORK {}", network_id))
-            .map_err(|e| {
-                WifiError::WpaSupplicantError(format!("Failed to select network: {}", e))
-            })?;
+            // Enable network
+            ctrl.request(&format!("ENABLE_NETWORK {}", network_id))
+                .map_err(|e| {
+                    WifiError::WpaSupplicantError(format!("Failed to enable network: {}", e))
+                })?;
 
-        debug!("Connection initiated for network: {}", ssid);
+            // Select network
+            ctrl.request(&format!("SELECT_NETWORK {}", network_id))
+                .map_err(|e| {
+                    WifiError::WpaSupplicantError(format!("Failed to select network: {}", e))
+                })?;
+
+            Ok::<(), WifiError>(())
+        })
+        .await
+        .map_err(|e| WifiError::WpaSupplicantError(format!("Task join error: {}", e)))??;
+
+        debug!("Connection initiated");
         Ok(())
     }
 
     async fn disconnect(&self) -> WifiResult<()> {
         debug!("Disconnecting from network");
 
-        let mut ctrl = self.connect()?;
+        let ctrl_socket = self.ctrl_socket.clone();
 
-        ctrl.request("DISCONNECT")
-            .map_err(|e| WifiError::WpaSupplicantError(format!("Failed to disconnect: {}", e)))?;
+        tokio::task::spawn_blocking(move || {
+            let mut ctrl = Client::builder()
+                .ctrl_path(&ctrl_socket)
+                .open()
+                .map_err(|e| {
+                    WifiError::WpaSupplicantError(format!(
+                        "Failed to connect to wpa_supplicant: {}",
+                        e
+                    ))
+                })?;
+
+            ctrl.request("DISCONNECT")
+                .map_err(|e| WifiError::WpaSupplicantError(format!("Failed to disconnect: {}", e)))
+        })
+        .await
+        .map_err(|e| WifiError::WpaSupplicantError(format!("Task join error: {}", e)))??;
 
         debug!("Disconnected successfully");
         Ok(())
     }
 
     async fn status(&self) -> WifiResult<ConnectionStatus> {
-        let mut ctrl = self.connect()?;
+        let ctrl_socket = self.ctrl_socket.clone();
 
-        let status_output = ctrl
-            .request("STATUS")
-            .map_err(|e| WifiError::WpaSupplicantError(format!("Failed to get status: {}", e)))?;
+        let status_output = tokio::task::spawn_blocking(move || {
+            let mut ctrl = Client::builder()
+                .ctrl_path(&ctrl_socket)
+                .open()
+                .map_err(|e| {
+                    WifiError::WpaSupplicantError(format!(
+                        "Failed to connect to wpa_supplicant: {}",
+                        e
+                    ))
+                })?;
+
+            ctrl.request("STATUS")
+                .map_err(|e| WifiError::WpaSupplicantError(format!("Failed to get status: {}", e)))
+        })
+        .await
+        .map_err(|e| WifiError::WpaSupplicantError(format!("Task join error: {}", e)))??;
 
         // Parse status to determine connection state
         let mut wpa_state = String::new();
