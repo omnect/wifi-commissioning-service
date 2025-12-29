@@ -257,13 +257,14 @@ sudo systemctl status wifi-commissioning-gatt@wlan0.service
 For testing the BLE interface, a web client is available:
 
 ```bash
-# Serve the test client
+cd examples/web-ble-client
 python3 -m http.server 8000
 
-# Navigate to http://localhost:8000/web_ble.html
+# Navigate to http://localhost:8000
 ```
 
 The Web BLE client allows browser-based testing of the BLE GATT protocol.
+See [examples/web-ble-client/README.md](examples/web-ble-client/README.md) for detailed usage instructions.
 
 ### Unit and Integration Tests
 
