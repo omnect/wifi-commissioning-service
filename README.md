@@ -2,6 +2,10 @@
 
 A WiFi commissioning service with dual transport support (Bluetooth Low Energy GATT + Unix domain sockets) for easy WiFi network configuration on embedded Linux devices.
 
+## Product Information
+
+This service is part of the [omnect](https://www.omnect.io/home) device management platform by conplement AG.
+
 ## Overview
 
 This service enables WiFi configuration through two transport mechanisms:
@@ -232,31 +236,18 @@ websocat UNIX:/run/wifi-commissioning.sock
 
 ## systemd Integration
 
-The service integrates with systemd for automatic startup and monitoring.
+The crate `wifi-commissioning-gatt-service` has the optional feature `systemd`.
 
-### Service File Example
+If you enable `systemd` it [notifies](https://www.freedesktop.org/software/systemd/man/sd_notify.html#READY=1) `systemd` that the startup is finished.
 
-```ini
-[Unit]
-Description=WiFi Commissioning Service
-After=network.target bluetooth.target wpa_supplicant.service
-
-[Service]
-Type=notify
-ExecStart=/usr/local/bin/wifi-commissioning -s "${DEVICE_SECRET}" --enable-unix-socket
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
+The systemd service file `systemd/wifi-commissioning-gatt@.service` is using the script `omnect_get_deviceid.sh` (see *-b* option), in order to supply the device ID. In the case the service is not used in combination with the *meta-omnect* layer, it has to be adapted accordingly.
 
 ### Enable and Start
 
 ```bash
-sudo systemctl enable wifi-commissioning
-sudo systemctl start wifi-commissioning
-sudo systemctl status wifi-commissioning
+sudo systemctl enable wifi-commissioning-gatt@wlan0.service
+sudo systemctl start wifi-commissioning-gatt@wlan0.service
+sudo systemctl status wifi-commissioning-gatt@wlan0.service
 ```
 
 ## Testing
@@ -309,26 +300,19 @@ cargo test -- --nocapture
 
 ## License
 
-Licensed under either of:
+Licensed under either of
 
-- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-- MIT license ([LICENSE-MIT](LICENSE-MIT))
+- Apache License, Version 2.0, (./LICENSE-APACHE or <http://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license (./LICENSE-MIT or <http://opensource.org/licenses/MIT>)
 
 at your option.
 
-## Copyright
+## Contribution
 
-Copyright © conplement AG
+Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
 
-## Contributing
+---
 
-Contributions are welcome! Please ensure:
+copyright (c) 2021 conplement AG
 
-1. All tests pass: `cargo test`
-2. Code is formatted: `cargo fmt`
-3. No clippy warnings: `cargo clippy --all-targets`
-4. Follow existing code style (see `CLAUDE.md` for guidelines)
-
-## Product Information
-
-This service is part of the [omnect](https://www.omnect.io/home) device management platform by conplement AG.
+Content published under the Apache License Version 2.0 or MIT license, are marked as such. They may be used in accordance with the stated license conditions.

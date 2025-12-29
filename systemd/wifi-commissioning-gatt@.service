@@ -1,0 +1,17 @@
+[Unit]
+Description=WiFi Commissioning Service (BLE GATT + Unix Socket) - %i
+Requires=wpa_supplicant@%i.service bluetooth.service bluetooth.target
+After=wpa_supplicant@%i.service bluetooth.service bluetooth.target
+
+[Service]
+Type=notify
+Restart=on-failure
+RestartSec=5
+
+User=wifi-commissioning-gatt
+Group=wpa_supplicant
+
+ExecStart=/bin/bash -c '/usr/bin/wifi-commissioning-gatt-service -i %i -b $(/usr/bin/omnect_get_deviceid.sh)'
+
+[Install]
+WantedBy=multi-user.target
