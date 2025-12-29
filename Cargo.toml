@@ -16,14 +16,15 @@ name = "wifi_commissioning"
 path = "src/lib.rs"
 
 [dependencies]
-bluer = { version = "0.17", default-features = false }
+bluer = { version = "0.17", default-features = false, features = ["bluetoothd"] }
 clap = { version = "4.5", default-features = false, features = ["derive", "std"] }
 futures = { version = "0.3", default-features = false }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
 sd-notify = { version = "0.4", default-features = false, optional = true }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
 sha3 = { version = "0.10", default-features = false }
-thiserror = { version = "1.0", default-features = false }
+thiserror = { version = "2.0", default-features = false }
 tokio = { version = "1.0", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process", "signal", "fs"] }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std", "registry"] }

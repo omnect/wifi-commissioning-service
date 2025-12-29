@@ -9,7 +9,6 @@ pub mod config;
 pub mod core;
 pub mod protocol;
 pub mod transport;
-pub mod util;
 
 pub use core::{
     error::{ServiceError, TransportError, WifiError},
