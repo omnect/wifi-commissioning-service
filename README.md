@@ -101,7 +101,7 @@ cargo fmt && cargo clippy --all-targets && cargo test
 ### Command-Line Options
 
 ```
-wifi-commissioning [OPTIONS]
+wifi-commissioning-service [OPTIONS]
 
 Options:
   -i, --interface <NAME>       Network interface [default: wlan0]
@@ -116,22 +116,22 @@ Options:
 
 **BLE only (default):**
 ```bash
-sudo ./wifi-commissioning -s "my-device-secret"
+sudo ./wifi-commissioning-service -s "my-device-secret"
 ```
 
 **Unix socket only:**
 ```bash
-sudo ./wifi-commissioning --no-enable-ble --enable-unix-socket
+sudo ./wifi-commissioning-service --no-enable-ble --enable-unix-socket
 ```
 
 **Both transports:**
 ```bash
-sudo ./wifi-commissioning -s "my-device-secret" --enable-unix-socket
+sudo ./wifi-commissioning-service -s "my-device-secret" --enable-unix-socket
 ```
 
 **Custom interface:**
 ```bash
-sudo ./wifi-commissioning -i wlp2s0 -s "my-device-secret"
+sudo ./wifi-commissioning-service -i wlp2s0 -s "my-device-secret"
 ```
 
 ### Graceful Shutdown
@@ -236,18 +236,18 @@ websocat UNIX:/run/wifi-commissioning.sock
 
 ## systemd Integration
 
-The crate `wifi-commissioning-gatt-service` has the optional feature `systemd`.
+The crate `wifi-commissioning-service` has the optional feature `systemd`.
 
 If you enable `systemd` it [notifies](https://www.freedesktop.org/software/systemd/man/sd_notify.html#READY=1) `systemd` that the startup is finished.
 
-The systemd service file `systemd/wifi-commissioning-gatt@.service` is using the script `omnect_get_deviceid.sh` (see *-b* option), in order to supply the device ID. In the case the service is not used in combination with the *meta-omnect* layer, it has to be adapted accordingly.
+The systemd service file `systemd/wifi-commissioning-service@.service` is using the script `omnect_get_deviceid.sh` (see *-b* option), in order to supply the device ID. In the case the service is not used in combination with the *meta-omnect* layer, it has to be adapted accordingly.
 
 ### Enable and Start
 
 ```bash
-sudo systemctl enable wifi-commissioning-gatt@wlan0.service
-sudo systemctl start wifi-commissioning-gatt@wlan0.service
-sudo systemctl status wifi-commissioning-gatt@wlan0.service
+sudo systemctl enable wifi-commissioning-service@wlan0.service
+sudo systemctl start wifi-commissioning-service@wlan0.service
+sudo systemctl status wifi-commissioning-service@wlan0.service
 ```
 
 ## Testing

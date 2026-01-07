@@ -8,10 +8,10 @@ Type=notify
 Restart=on-failure
 RestartSec=5
 
-User=wifi-commissioning-gatt
+User=wifi-commissioning-service
 Group=wpa_supplicant
 
-ExecStart=/bin/bash -c '/usr/bin/wifi-commissioning-gatt-service -i %i -b $(/usr/bin/omnect_get_deviceid.sh)'
+ExecStart=/bin/bash -c '/usr/bin/wifi-commissioning-service -i %i -b $(/usr/bin/omnect_get_deviceid.sh)'
 
 [Install]
 WantedBy=multi-user.target

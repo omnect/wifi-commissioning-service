@@ -283,10 +283,10 @@ The service creates the socket based on the `-s/--socket-path` argument:
 
 ```bash
 # Default location
-wifi-commissioning-gatt-service -i wlan0 -s /var/run/wifi-commissioning.sock
+wifi-commissioning-service -i wlan0 -s /var/run/wifi-commissioning.sock
 
 # Custom location
-wifi-commissioning-gatt-service -i wlan0 -s /tmp/wifi.sock
+wifi-commissioning-service -i wlan0 -s /tmp/wifi.sock
 ```
 
 With systemd, the socket path is typically `/var/run/wifi-commissioning.sock`.
@@ -306,7 +306,8 @@ curl --unix-socket /tmp/test.sock -d '{"test":"data"}' http://localhost/
 ## Troubleshooting
 
 **"Couldn't connect to server"**
-- Check the service is running: `systemctl status wifi-commissioning-gatt@wlan0`
+
+- Check the service is running: `systemctl status wifi-commissioning-service@wlan0`
 - Verify socket exists: `ls -l /var/run/wifi-commissioning.sock`
 - Check permissions on the socket file
 

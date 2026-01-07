@@ -1049,8 +1049,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "wifi-commissioning"
-version = "0.5.0"
+name = "wifi-commissioning-service"
+version = "0.1.0"
 dependencies = [
  "bluer",
  "clap",

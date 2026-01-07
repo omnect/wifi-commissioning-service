@@ -3,7 +3,7 @@
 use clap::Parser;
 
 #[derive(Parser, Debug, Clone)]
-#[command(name = "wifi-commissioning", version, author)]
+#[command(name = "wifi-commissioning-service", version, author)]
 #[command(about = "WiFi commissioning service with BLE and Unix socket support")]
 pub struct CliArgs {
     /// Wireless network interface name

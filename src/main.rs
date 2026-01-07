@@ -5,7 +5,7 @@ use std::sync::Arc;
 use clap::Parser;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use wifi_commissioning::{
+use wifi_commissioning_service::{
     backend::WpactrlBackend,
     config::CliArgs,
     core::service::WifiCommissioningService,
@@ -131,7 +131,7 @@ async fn shutdown_signal() {
 async fn start_ble_transport(
     service: Arc<WifiCommissioningService<WpactrlBackend>>,
 ) -> Result<tokio::task::JoinHandle<()>, Box<dyn std::error::Error>> {
-    use wifi_commissioning::transport::ble::GattServer;
+    use wifi_commissioning_service::transport::ble::GattServer;
 
     let mut adapter = BleAdapter::new("WiFi-Setup".to_string()).await?;
     let session = adapter.session();
