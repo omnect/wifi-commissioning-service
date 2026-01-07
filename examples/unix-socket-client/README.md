@@ -279,17 +279,33 @@ curl -s --unix-socket /var/run/wifi-commissioning.sock \
 
 ## Socket Path Configuration
 
-The service creates the socket based on the `-s/--socket-path` argument:
+### Production (systemd socket activation)
+
+In production, systemd manages the socket. The socket path is defined in the `.socket` unit file:
 
 ```bash
-# Default location
-wifi-commissioning-service -i wlan0 -s /var/run/wifi-commissioning.sock
+# Socket path pattern (where %i is the interface name)
+/run/wifi-commissioning-%i.sock
 
-# Custom location
-wifi-commissioning-service -i wlan0 -s /tmp/wifi.sock
+# Example for wlan0
+/run/wifi-commissioning-wlan0.sock
 ```
 
-With systemd, the socket path is typically `/var/run/wifi-commissioning.sock`.
+The service automatically detects and uses the systemd-provided socket.
+
+### Testing/Development (standalone mode)
+
+For testing without systemd, the service creates its own socket:
+
+```bash
+# Default location (standalone)
+wifi-commissioning-service -i wlan0 -s "secret" --enable-unix-socket --socket-path /tmp/wifi.sock
+
+# Custom location
+wifi-commissioning-service -i wlan0 -s "secret" --enable-unix-socket --socket-path /tmp/custom.sock
+```
+
+**Note:** Standalone mode is for testing only. Production deployments should use systemd socket activation.
 
 ## Testing with Mock Service
 
@@ -308,7 +324,8 @@ curl --unix-socket /tmp/test.sock -d '{"test":"data"}' http://localhost/
 **"Couldn't connect to server"**
 
 - Check the service is running: `systemctl status wifi-commissioning-service@wlan0`
-- Verify socket exists: `ls -l /var/run/wifi-commissioning.sock`
+- Check the socket is active: `systemctl status wifi-commissioning-service@wlan0.socket`
+- Verify socket exists: `ls -l /run/wifi-commissioning-wlan0.sock`
 - Check permissions on the socket file
 
 **"Permission denied"**

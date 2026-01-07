@@ -242,13 +242,42 @@ If you enable `systemd` it [notifies](https://www.freedesktop.org/software/syste
 
 The systemd service file `systemd/wifi-commissioning-service@.service` is using the script `omnect_get_deviceid.sh` (see *-b* option), in order to supply the device ID. In the case the service is not used in combination with the *meta-omnect* layer, it has to be adapted accordingly.
 
-### Enable and Start
+### Socket Activation (Production)
+
+In production (omnect-os), the service uses **systemd socket activation** for the Unix socket transport:
+
+- `wifi-commissioning-service@.socket` - Creates and manages the Unix socket
+- `wifi-commissioning-service@.service` - The service itself
+
+systemd creates the socket before starting the service, ensuring the socket is available immediately.
+
+**Enable and Start:**
 
 ```bash
+# Enable both socket and service
+sudo systemctl enable wifi-commissioning-service@wlan0.socket
 sudo systemctl enable wifi-commissioning-service@wlan0.service
+
+# Start the socket (service starts on-demand or can be started manually)
+sudo systemctl start wifi-commissioning-service@wlan0.socket
 sudo systemctl start wifi-commissioning-service@wlan0.service
+
+# Check status
 sudo systemctl status wifi-commissioning-service@wlan0.service
+sudo systemctl status wifi-commissioning-service@wlan0.socket
 ```
+
+**Socket path:** `/run/wifi-commissioning-wlan0.sock`
+
+### Standalone Mode (Testing/Development)
+
+For testing without systemd, the service can create its own socket:
+
+```bash
+sudo ./wifi-commissioning-service -i wlan0 -s "device-secret" --enable-unix-socket --socket-path /tmp/wifi.sock
+```
+
+**Note:** Standalone mode is intended for testing and development only. In production, always use systemd socket activation.
 
 ## Testing
 

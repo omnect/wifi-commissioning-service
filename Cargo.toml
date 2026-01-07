@@ -21,6 +21,7 @@ bluer = { version = "0.17", default-features = false, features = ["bluetoothd"] 
 clap = { version = "4.5", default-features = false, features = ["derive", "std"] }
 futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
+listenfd = { version = "1.0", default-features = false }
 sd-notify = { version = "0.4", default-features = false, optional = true }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }

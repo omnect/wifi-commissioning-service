@@ -50,14 +50,12 @@ impl<B: WifiBackend> UnixSocketServer<B> {
     }
 
     /// Start the server
+    ///
+    /// Supports both systemd socket activation and standalone mode:
+    /// - If systemd provides a socket (LISTEN_FDS), use it (production mode)
+    /// - Otherwise, create a new socket at socket_path (standalone/testing mode)
     pub async fn start(&self) -> std::io::Result<()> {
-        // Remove existing socket file if it exists
-        if Path::new(&self.socket_path).exists() {
-            fs::remove_file(&self.socket_path).await?;
-        }
-
-        let listener = UnixListener::bind(&self.socket_path)?;
-        info!("Unix socket server listening on {}", self.socket_path);
+        let listener = self.get_listener().await?;
 
         loop {
             match listener.accept().await {
@@ -74,6 +72,36 @@ impl<B: WifiBackend> UnixSocketServer<B> {
                 }
             }
         }
+    }
+
+    /// Get listener from systemd or create standalone
+    async fn get_listener(&self) -> std::io::Result<UnixListener> {
+        // Try systemd socket activation first
+        let mut listenfd = listenfd::ListenFd::from_env();
+
+        if let Ok(Some(listener)) = listenfd.take_unix_listener(0) {
+            // Systemd provided a socket (production mode)
+            info!("Using systemd socket activation (socket managed by systemd)");
+            listener.set_nonblocking(true)?;
+            return UnixListener::from_std(listener);
+        }
+
+        // Standalone mode: create socket ourselves (for testing/development)
+        info!(
+            "Starting in standalone mode (creating socket at {})",
+            self.socket_path
+        );
+        info!("NOTE: In production, use systemd socket activation instead");
+
+        // Remove existing socket file if it exists
+        if Path::new(&self.socket_path).exists() {
+            fs::remove_file(&self.socket_path).await?;
+        }
+
+        let listener = UnixListener::bind(&self.socket_path)?;
+        info!("Unix socket server listening on {}", self.socket_path);
+
+        Ok(listener)
     }
 
     async fn handle_client(
