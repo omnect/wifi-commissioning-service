@@ -105,6 +105,22 @@ impl WifiBackend for MockWifiBackend {
         }
     }
 
+    async fn connect_and_wait(&self, ssid: &str, _psk: &[u8; 32]) -> WifiResult<ConnectionStatus> {
+        let mut state = self.inner.lock().await;
+        if state.should_fail_connect {
+            Err(WifiError::ConnectionFailed("Mock connect failure".into()))
+        } else {
+            state.connected_ssid = Some(ssid.to_string());
+            state.connection_state = ConnectionState::Connected;
+            state.ip_address = Some("192.168.1.100".to_string());
+            Ok(ConnectionStatus {
+                state: ConnectionState::Connected,
+                ssid: Some(ssid.to_string()),
+                ip_address: Some("192.168.1.100".to_string()),
+            })
+        }
+    }
+
     async fn disconnect(&self) -> WifiResult<()> {
         let mut state = self.inner.lock().await;
         state.connected_ssid = None;

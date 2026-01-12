@@ -24,10 +24,20 @@ The service provides a clean architecture with separation of concerns, comprehen
 ### Core Components
 
 - **Core Services**: Transport-agnostic business logic (authorization, scanning, connection)
-- **Backend Abstraction**: `WifiBackend` trait with `wpactrl` implementation
+- **Backend Abstraction**: `WifiBackend` trait with `wifi-ctrl` implementation
 - **Dual Transports**: BLE GATT and Unix socket with shared service layer
 - **State Machines**: Explicit state management for scan and connection workflows
 - **Protocol Layer**: JSON-RPC 2.0 for Unix socket, GATT protocol for BLE
+
+### Configuration Persistence
+
+The service implements an "Atomic Success" strategy for saving WiFi credentials:
+
+1. Credentials are first applied to `wpa_supplicant` in volatile memory.
+2. The service waits for a successful connection event (`CTRL-EVENT-CONNECTED`) and IP address assignment.
+3. Only **after** full success is confirmed, `save_config` is called to persist the network to `/etc/wpa_supplicant/wpa_supplicant.conf`.
+
+This ensures that only working network configurations are saved to disk, preventing the device from storing invalid credentials (e.g., wrong password) that would cause permanent connection failures on reboot.
 
 ### Module Structure
 
@@ -41,7 +51,7 @@ src/
 │
 ├── backend/                # WiFi hardware abstraction
 │   ├── wifi_backend.rs     # WifiBackend trait
-│   ├── wpactrl_backend.rs  # wpa_supplicant integration
+│   ├── wifi_ctrl_backend.rs # wifi-ctrl integration
 │   └── mock_backend.rs     # Mock for testing
 │
 ├── transport/              # Transport layers
@@ -84,7 +94,7 @@ cargo build --release --features systemd
 
 ### Testing
 
-Run the comprehensive test suite (101 tests):
+Run the comprehensive test suite (91 tests):
 
 ```bash
 cargo test
@@ -318,12 +328,12 @@ See [examples/unix-socket-client/README.md](examples/unix-socket-client/README.m
 
 ### Unit and Integration Tests
 
-The project includes 101 comprehensive tests covering:
+The project includes 91 comprehensive tests covering:
 
 - Authorization service (5 tests)
 - Scanner service (5 tests)
 - Connection service (5 tests)
-- wpactrl backend (17 tests - parsing, UTF-8, emoji handling)
+- wifi-ctrl backend integration (3 tests)
 - BLE characteristics (26 tests - auth, scan, connect, multi-part writes)
 - BLE session (6 tests)
 - BLE UUIDs (2 tests)

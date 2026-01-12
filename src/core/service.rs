@@ -148,10 +148,8 @@ mod tests {
         let psk = [0u8; 32];
         service.connect("TestNet", &psk).await.unwrap();
 
-        // Wait for connection
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-        backend.complete_connection("192.168.1.100").await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        // Wait for background task to complete (connect_and_wait handles the actual waiting)
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         let status = service.connection_status().await;
         assert_eq!(status.state, ConnectionState::Connected);
@@ -165,9 +163,9 @@ mod tests {
 
         let psk = [0u8; 32];
         service.connect("TestNet", &psk).await.unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-        backend.complete_connection("192.168.1.100").await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+
+        // Wait for background task to complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         // Disconnect
         service.disconnect().await.unwrap();

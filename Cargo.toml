@@ -32,7 +32,7 @@ tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std", "registry"] }
 trait-variant = { version = "0.1", default-features = false }
 uuid = { version = "1.0", default-features = false, features = ["v4", "serde"] }
-wpactrl = { version = "0.5", default-features = false }
+wifi-ctrl = { version = "0.2", default-features = false }
 
 [dev-dependencies]
 pretty_assertions = { version = "1.0", default-features = false, features = ["std"] }

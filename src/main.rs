@@ -6,7 +6,7 @@ use clap::Parser;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use wifi_commissioning_service::{
-    backend::WpactrlBackend,
+    backend::WifiCtrlBackend,
     config::CliArgs,
     core::service::WifiCommissioningService,
     transport::{ble::BleAdapter, unix_socket::UnixSocketServer},
@@ -39,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Create WiFi backend
-    let backend = Arc::new(WpactrlBackend::new(args.interface.clone()));
+    let backend = Arc::new(WifiCtrlBackend::new(args.interface.clone()).await?);
     info!("WiFi backend initialized for interface: {}", args.interface);
 
     // Create WiFi commissioning service
@@ -129,7 +129,7 @@ async fn shutdown_signal() {
 }
 
 async fn start_ble_transport(
-    service: Arc<WifiCommissioningService<WpactrlBackend>>,
+    service: Arc<WifiCommissioningService<WifiCtrlBackend>>,
 ) -> Result<tokio::task::JoinHandle<()>, Box<dyn std::error::Error>> {
     use wifi_commissioning_service::transport::ble::GattServer;
 

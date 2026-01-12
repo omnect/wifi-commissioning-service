@@ -102,33 +102,17 @@ impl<B: WifiBackend> ConnectionService<B> {
             .await
             .start_connect(ssid.to_string())?;
 
-        // Perform connection in background
+        // Perform connection in background using event-based waiting
         let backend = self.backend.clone();
         let state_machine = self.state_machine.clone();
         let ssid_owned = ssid.to_string();
         let psk_owned = *psk;
 
         tokio::spawn(async move {
-            match backend.connect(&ssid_owned, &psk_owned).await {
-                Ok(()) => {
-                    // Poll for IP address (in real implementation, this would come from backend)
-                    // For now, simulate getting IP from status
-                    tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
-                    match backend.status().await {
-                        Ok(status) => {
-                            if let Some(ip) = status.ip_address {
-                                state_machine.write().await.complete_connect(ip);
-                            } else {
-                                state_machine
-                                    .write()
-                                    .await
-                                    .complete_connect("0.0.0.0".to_string());
-                            }
-                        }
-                        Err(e) => {
-                            state_machine.write().await.fail_connect(e.to_string());
-                        }
-                    }
+            match backend.connect_and_wait(&ssid_owned, &psk_owned).await {
+                Ok(status) => {
+                    let ip = status.ip_address.unwrap_or_else(|| "0.0.0.0".to_string());
+                    state_machine.write().await.complete_connect(ip);
                 }
                 Err(e) => {
                     state_machine.write().await.fail_connect(e.to_string());
@@ -207,14 +191,13 @@ mod tests {
         let psk = [0u8; 32];
         service.connect("TestNet", &psk).await.unwrap();
 
-        // Wait for connection to complete
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-        backend.complete_connection("192.168.1.100").await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+        // Wait for connection to complete (connect_and_wait now handles this)
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         let status = service.status().await;
         assert_eq!(status.state, ConnectionState::Connected);
         assert_eq!(status.ssid, Some("TestNet".to_string()));
+        assert!(status.ip_address.is_some());
     }
 
     #[tokio::test]
@@ -240,9 +223,9 @@ mod tests {
 
         let psk = [0u8; 32];
         service.connect("TestNet", &psk).await.unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
-        backend.complete_connection("192.168.1.100").await;
-        tokio::time::sleep(tokio::time::Duration::from_millis(20)).await;
+
+        // Wait for connection to complete (connect_and_wait now handles this)
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
 
         // Disconnect
         service.disconnect().await.unwrap();

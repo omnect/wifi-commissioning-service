@@ -2,9 +2,9 @@
 
 pub mod mock_backend;
 pub mod wifi_backend;
-pub mod wpactrl_backend;
+pub mod wifi_ctrl_backend;
 
-pub use {wifi_backend::WifiBackend, wpactrl_backend::WpactrlBackend};
+pub use {wifi_backend::WifiBackend, wifi_ctrl_backend::WifiCtrlBackend};
 
 #[cfg(test)]
 pub use mock_backend::MockWifiBackend;
