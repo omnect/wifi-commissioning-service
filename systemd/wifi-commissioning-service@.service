@@ -8,8 +8,8 @@ Type=notify
 Restart=on-failure
 RestartSec=5
 
-User=wifi-commissioning-service
-Group=wpa_supplicant
+User=wifi_commissioning
+Group=wifi_commissioning
 
 ExecStart=/bin/bash -c '/usr/bin/wifi-commissioning-service -i %i -b $(/usr/bin/omnect_get_deviceid.sh) --enable-unix-socket'
 
