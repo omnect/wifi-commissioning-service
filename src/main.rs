@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use clap::Parser;
-use tracing::{error, info};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing::{Instrument, error, info, info_span};
+use tracing_subscriber::{fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt};
 use wifi_commissioning_service::{
     backend::WifiCtrlBackend, config::CliArgs, core::service::WifiCommissioningService,
     transport::ble::BleAdapter,
@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "info,wifi_commissioning=debug".into()),
         )
-        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::fmt::layer().with_span_events(FmtSpan::CLOSE))
         .init();
 
     // Parse CLI arguments
@@ -62,11 +62,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             service.connector.clone(),
         )?;
 
-        let task = tokio::spawn(async move {
-            if let Err(e) = server.await {
-                error!("Unix socket server error: {}", e);
+        let span = info_span!("unix_socket_transport");
+        let task = tokio::spawn(
+            async move {
+                if let Err(e) = server.await {
+                    error!("Unix socket server error: {}", e);
+                }
             }
-        });
+            .instrument(span),
+        );
 
         tasks.push(task);
     }
@@ -137,11 +141,15 @@ async fn start_ble_transport(
     let gatt_server = Arc::new(GattServer::new(service, session));
     adapter.start(gatt_server.clone()).await?;
 
-    let task = tokio::spawn(async move {
-        if let Err(e) = adapter.run_event_loop().await {
-            error!("BLE adapter error: {}", e);
+    let span = info_span!("ble_transport");
+    let task = tokio::spawn(
+        async move {
+            if let Err(e) = adapter.run_event_loop().await {
+                error!("BLE adapter error: {}", e);
+            }
         }
-    });
+        .instrument(span),
+    );
 
     Ok(task)
 }

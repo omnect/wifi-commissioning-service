@@ -3,7 +3,7 @@
 use bluer::gatt::local::ReqError;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, warn};
+use tracing::{debug, error, instrument, warn};
 
 use crate::{
     backend::WifiBackend,
@@ -44,9 +44,8 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
     }
 
     /// Handle authorization key write
+    #[instrument(skip_all, fields(value_len = value.len()))]
     pub async fn handle_auth_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
-        debug!("Authorization write received ({} bytes)", value.len());
-
         if value.len() != 32 {
             error!("Invalid auth key length: {}", value.len());
             return Err(ReqError::InvalidValueLength);
@@ -69,10 +68,9 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
     }
 
     /// Handle scan control write
+    #[instrument(skip_all, fields(value_len = value.len()))]
     pub async fn handle_scan_control_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
         self.check_authorized().await?;
-
-        debug!("Scan control write received ({} bytes)", value.len());
 
         if value.is_empty() {
             return Err(ReqError::InvalidValueLength);
@@ -99,21 +97,18 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
     }
 
     /// Handle scan state read
+    #[instrument(skip_all)]
     pub async fn handle_scan_state_read(&self) -> Result<Vec<u8>, ReqError> {
         self.check_authorized().await?;
 
         let state = self.service.scan_state().await;
         let state_byte = u8::from(state);
 
-        debug!(
-            "Scan state read: {} ({})",
-            state_byte,
-            format!("{:?}", state)
-        );
         Ok(vec![state_byte])
     }
 
     /// Handle scan results read (paginated)
+    #[instrument(skip_all)]
     pub async fn handle_scan_results_read(&self) -> Result<Vec<u8>, ReqError> {
         self.check_authorized().await?;
 
@@ -146,13 +141,6 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
         let end = std::cmp::min(offset + MAX_CHUNK_SIZE, bytes.len());
         let chunk = bytes[offset..end].to_vec();
 
-        debug!(
-            "Scan results read: offset={}, chunk_size={}, total_size={}",
-            offset,
-            chunk.len(),
-            bytes.len()
-        );
-
         // Update offset for next read
         *self.result_offset.write().await = end;
 
@@ -160,19 +148,18 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
     }
 
     /// Handle SSID write (accumulates partial writes)
+    #[instrument(skip_all, fields(value_len = value.len()))]
     pub async fn handle_ssid_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
         self.check_authorized().await?;
 
-        debug!("SSID write received ({} bytes)", value.len());
         self.session.write().await.append_ssid(&value).await;
         Ok(())
     }
 
     /// Handle PSK write
+    #[instrument(skip_all, fields(value_len = value.len()))]
     pub async fn handle_psk_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
         self.check_authorized().await?;
-
-        debug!("PSK write received ({} bytes)", value.len());
 
         if value.len() != 32 {
             error!("Invalid PSK length: {}", value.len());
@@ -187,10 +174,9 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
     }
 
     /// Handle connect control write
+    #[instrument(skip_all, fields(value_len = value.len()))]
     pub async fn handle_connect_control_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
         self.check_authorized().await?;
-
-        debug!("Connect control write received ({} bytes)", value.len());
 
         if value.is_empty() {
             return Err(ReqError::InvalidValueLength);
@@ -249,13 +235,13 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
     }
 
     /// Handle connection state read
+    #[instrument(skip_all)]
     pub async fn handle_connect_state_read(&self) -> Result<Vec<u8>, ReqError> {
         self.check_authorized().await?;
 
         let status = self.service.connection_status().await;
         let state_byte = u8::from(status.state);
 
-        debug!("Connection state read: {} ({:?})", state_byte, status.state);
         Ok(vec![state_byte])
     }
 }

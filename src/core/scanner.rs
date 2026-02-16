@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::{Instrument, info_span, instrument};
 
 use crate::{
     backend::WifiBackend,
@@ -93,6 +94,7 @@ impl<B: WifiBackend> ScanService<B> {
     /// Start a WiFi scan
     ///
     /// Returns an error if a scan is already in progress
+    #[instrument(skip_all)]
     pub async fn start_scan(&self) -> ServiceResult<()> {
         // Check and update state
         self.state_machine.write().await.start_scan()?;
@@ -101,16 +103,20 @@ impl<B: WifiBackend> ScanService<B> {
         let backend = self.backend.clone();
         let state_machine = self.state_machine.clone();
 
-        tokio::spawn(async move {
-            match backend.scan().await {
-                Ok(networks) => {
-                    state_machine.write().await.complete_scan(networks);
-                }
-                Err(e) => {
-                    state_machine.write().await.fail_scan(e.to_string());
+        let span = info_span!("scan_task");
+        tokio::spawn(
+            async move {
+                match backend.scan().await {
+                    Ok(networks) => {
+                        state_machine.write().await.complete_scan(networks);
+                    }
+                    Err(e) => {
+                        state_machine.write().await.fail_scan(e.to_string());
+                    }
                 }
             }
-        });
+            .instrument(span),
+        );
 
         Ok(())
     }

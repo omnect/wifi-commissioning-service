@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::{Instrument, info_span, instrument};
 
 use crate::{
     backend::WifiBackend,
@@ -95,6 +96,7 @@ impl<B: WifiBackend> ConnectionService<B> {
     }
 
     /// Connect to a WiFi network
+    #[instrument(skip_all, fields(ssid))]
     pub async fn connect(&self, ssid: &str, psk: &[u8; 32]) -> ServiceResult<()> {
         // Check and update state
         self.state_machine
@@ -108,22 +110,27 @@ impl<B: WifiBackend> ConnectionService<B> {
         let ssid_owned = ssid.to_string();
         let psk_owned = *psk;
 
-        tokio::spawn(async move {
-            match backend.connect_and_wait(&ssid_owned, &psk_owned).await {
-                Ok(status) => {
-                    let ip = status.ip_address.unwrap_or_else(|| "0.0.0.0".to_string());
-                    state_machine.write().await.complete_connect(ip);
-                }
-                Err(e) => {
-                    state_machine.write().await.fail_connect(e.to_string());
+        let span = info_span!("connect_task", ssid = %ssid_owned);
+        tokio::spawn(
+            async move {
+                match backend.connect_and_wait(&ssid_owned, &psk_owned).await {
+                    Ok(status) => {
+                        let ip = status.ip_address.unwrap_or_else(|| "0.0.0.0".to_string());
+                        state_machine.write().await.complete_connect(ip);
+                    }
+                    Err(e) => {
+                        state_machine.write().await.fail_connect(e.to_string());
+                    }
                 }
             }
-        });
+            .instrument(span),
+        );
 
         Ok(())
     }
 
     /// Disconnect from current network
+    #[instrument(skip_all)]
     pub async fn disconnect(&self) -> ServiceResult<()> {
         self.backend.disconnect().await?;
         self.state_machine.write().await.disconnect();

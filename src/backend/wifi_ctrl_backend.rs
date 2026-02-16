@@ -2,7 +2,7 @@
 
 use tokio::process::Command;
 use tokio::sync::broadcast;
-use tracing::{debug, error, warn};
+use tracing::{Instrument, debug, error, info_span, instrument, warn};
 use wifi_ctrl::sta::{Broadcast, BroadcastReceiver, RequestClient, WifiSetup};
 
 use crate::{
@@ -25,6 +25,7 @@ pub struct WifiCtrlBackend {
 }
 
 impl WifiCtrlBackend {
+    #[instrument(skip_all, fields(interface = %interface))]
     pub async fn new(interface: String) -> WifiResult<Self> {
         let path = format!("/var/run/wpa_supplicant/{}", interface);
         let mut setup =
@@ -36,11 +37,15 @@ impl WifiCtrlBackend {
         let station = setup.complete();
 
         // Spawn the station runtime
-        tokio::spawn(async move {
-            if let Err(e) = station.run().await {
-                error!("WifiStation runtime error: {}", e);
+        let span = info_span!("wpa_station_runtime");
+        tokio::spawn(
+            async move {
+                if let Err(e) = station.run().await {
+                    error!("WifiStation runtime error: {}", e);
+                }
             }
-        });
+            .instrument(span),
+        );
 
         Ok(Self {
             interface,
@@ -118,9 +123,8 @@ impl WifiCtrlBackend {
 }
 
 impl WifiBackend for WifiCtrlBackend {
+    #[instrument(skip_all, fields(interface = %self.interface))]
     async fn scan(&self) -> WifiResult<Vec<WifiNetwork>> {
-        debug!("Starting WiFi scan on interface: {}", self.interface);
-
         let results = self
             .client
             .get_scan()
@@ -141,9 +145,8 @@ impl WifiBackend for WifiCtrlBackend {
         Ok(networks)
     }
 
+    #[instrument(skip_all, fields(interface = %self.interface, ssid))]
     async fn connect(&self, ssid: &str, psk: &[u8; 32]) -> WifiResult<()> {
-        debug!("Connecting to network: {}", ssid);
-
         // Add network
         let network_id =
             self.client.add_network().await.map_err(|e| {
@@ -172,6 +175,7 @@ impl WifiBackend for WifiCtrlBackend {
         Ok(())
     }
 
+    #[instrument(skip_all, fields(interface = %self.interface, ssid))]
     async fn connect_and_wait(&self, ssid: &str, psk: &[u8; 32]) -> WifiResult<ConnectionStatus> {
         // Start listening to events BEFORE connecting to avoid race condition
         let mut receiver = self.broadcast_receiver.resubscribe();
@@ -254,6 +258,7 @@ impl WifiBackend for WifiCtrlBackend {
         }
     }
 
+    #[instrument(skip_all, fields(interface = %self.interface))]
     async fn disconnect(&self) -> WifiResult<()> {
         debug!("Disconnecting");
         // wifi-ctrl doesn't have explicit disconnect?
@@ -268,6 +273,7 @@ impl WifiBackend for WifiCtrlBackend {
         Ok(())
     }
 
+    #[instrument(skip_all, fields(interface = %self.interface))]
     async fn status(&self) -> WifiResult<ConnectionStatus> {
         let status =
             self.client.get_status().await.map_err(|e| {

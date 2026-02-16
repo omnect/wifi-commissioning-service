@@ -4,7 +4,7 @@ use bluer::{Adapter, AdapterEvent};
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{debug, info, instrument, warn};
 
 use crate::{
     backend::WifiBackend,
@@ -21,6 +21,7 @@ pub struct BleAdapter<B: WifiBackend> {
 
 impl<B: WifiBackend> BleAdapter<B> {
     /// Create a new BLE adapter
+    #[instrument(skip_all, fields(device_name = %device_name))]
     pub async fn new(device_name: String) -> Result<Self, bluer::Error> {
         let session = bluer::Session::new().await?;
         let adapter = session.default_adapter().await?;
@@ -41,6 +42,7 @@ impl<B: WifiBackend> BleAdapter<B> {
     }
 
     /// Start the BLE adapter
+    #[instrument(skip_all, fields(device_name = %self.device_name))]
     pub async fn start(&mut self, gatt_server: Arc<GattServer<B>>) -> Result<(), bluer::Error> {
         info!("Starting BLE adapter");
 
@@ -69,6 +71,7 @@ impl<B: WifiBackend> BleAdapter<B> {
     }
 
     /// Stop the BLE adapter
+    #[instrument(skip_all)]
     pub async fn stop(&mut self) -> Result<(), bluer::Error> {
         info!("Stopping BLE adapter");
 
@@ -85,6 +88,7 @@ impl<B: WifiBackend> BleAdapter<B> {
     }
 
     /// Run event loop (process BLE events)
+    #[instrument(skip_all, fields(device_name = %self.device_name))]
     pub async fn run_event_loop(&self) -> Result<(), bluer::Error> {
         let mut events = self.adapter.events().await?;
 
