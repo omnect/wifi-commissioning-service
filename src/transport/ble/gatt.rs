@@ -59,6 +59,7 @@ impl<B: WifiBackend> GattServer<B> {
                 write: Some(CharacteristicWrite {
                     write: true,
                     write_without_response: false,
+                    encrypt_write: true,
                     method: CharacteristicWriteMethod::Fun(Box::new(move |new_value, _req| {
                         let handler = handler.clone();
                         Box::pin(async move { handler.handle_auth_write(new_value).await })
@@ -83,6 +84,7 @@ impl<B: WifiBackend> GattServer<B> {
                     write: Some(CharacteristicWrite {
                         write: true,
                         write_without_response: false,
+                        encrypt_write: true,
                         method: CharacteristicWriteMethod::Fun({
                             let handler = handler.clone();
                             Box::new(move |new_value, _req| {
@@ -101,6 +103,7 @@ impl<B: WifiBackend> GattServer<B> {
                     uuid: SCAN_STATE_CHAR_UUID,
                     read: Some(CharacteristicRead {
                         read: true,
+                        encrypt_read: true,
                         fun: {
                             let handler = handler.clone();
                             Box::new(move |_req| {
@@ -118,6 +121,7 @@ impl<B: WifiBackend> GattServer<B> {
                     uuid: SCAN_RESULTS_CHAR_UUID,
                     read: Some(CharacteristicRead {
                         read: true,
+                        encrypt_read: true,
                         fun: {
                             let handler = handler.clone();
                             Box::new(move |_req| {
@@ -146,6 +150,7 @@ impl<B: WifiBackend> GattServer<B> {
                     write: Some(CharacteristicWrite {
                         write: true,
                         write_without_response: false,
+                        encrypt_write: true,
                         method: CharacteristicWriteMethod::Fun({
                             let handler = handler.clone();
                             Box::new(move |new_value, _req| {
@@ -163,6 +168,7 @@ impl<B: WifiBackend> GattServer<B> {
                     write: Some(CharacteristicWrite {
                         write: true,
                         write_without_response: false,
+                        encrypt_write: true,
                         method: CharacteristicWriteMethod::Fun({
                             let handler = handler.clone();
                             Box::new(move |new_value, _req| {
@@ -180,6 +186,7 @@ impl<B: WifiBackend> GattServer<B> {
                     write: Some(CharacteristicWrite {
                         write: true,
                         write_without_response: false,
+                        encrypt_write: true,
                         method: CharacteristicWriteMethod::Fun({
                             let handler = handler.clone();
                             Box::new(move |new_value, _req| {
@@ -198,6 +205,7 @@ impl<B: WifiBackend> GattServer<B> {
                     uuid: CONNECT_STATE_CHAR_UUID,
                     read: Some(CharacteristicRead {
                         read: true,
+                        encrypt_read: true,
                         fun: {
                             let handler = handler.clone();
                             Box::new(move |_req| {

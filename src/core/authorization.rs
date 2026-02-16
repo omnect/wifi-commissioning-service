@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use subtle::ConstantTimeEq;
 use tokio::sync::RwLock;
 
 use crate::core::{
@@ -46,8 +47,8 @@ impl AuthorizationService {
         hasher.update(self.device_id.as_bytes());
         let expected_hash = hasher.finalize();
 
-        // Compare hashes
-        if key != expected_hash.as_slice() {
+        // Constant-time comparison to prevent timing side-channel
+        if key.ct_eq(expected_hash.as_slice()).unwrap_u8() != 1 {
             return Err(ServiceError::InvalidAuthorizationKey);
         }
 
