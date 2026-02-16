@@ -1,6 +1,6 @@
 # Unix Socket Client Examples
 
-Command-line examples for testing the WiFi Commissioning Service via Unix domain socket using JSON-RPC 2.0.
+Command-line examples for testing the WiFi Commissioning Service REST API via Unix domain socket.
 
 ## Quick Start
 
@@ -15,8 +15,8 @@ The `wifi-client.sh` script provides a simple command-line interface:
 # List available networks
 ./wifi-client.sh list
 
-# Connect to a network
-./wifi-client.sh connect "MyNetwork" "MyPassword123"
+# Connect to a network (PSK = 64 hex chars = hex-encoded 32 bytes)
+./wifi-client.sh connect "MyNetwork" "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 # Check connection status
 ./wifi-client.sh status
@@ -34,241 +34,167 @@ WIFI_SOCKET_PATH=/tmp/wifi.sock ./wifi-client.sh scan
 
 All examples below use the default socket path. Add `-v` for verbose output.
 
-## JSON-RPC 2.0 Protocol
+## REST API
 
-All requests follow the JSON-RPC 2.0 specification:
+The Unix socket transport serves an HTTP REST API. All responses are JSON.
 
+### Endpoints
+
+| Method | Path | Description |
+| ------ | ---- | ----------- |
+| POST | `/api/v1/scan` | Start WiFi scan |
+| GET | `/api/v1/scan/results` | Get scan results |
+| POST | `/api/v1/connect` | Connect to network |
+| POST | `/api/v1/disconnect` | Disconnect |
+| GET | `/api/v1/status` | Connection status |
+
+## Available Endpoints
+
+### 1. Start WiFi Scan
+
+```bash
+curl -X POST --unix-socket /var/run/wifi-commissioning.sock \
+  http://localhost/api/v1/scan
+```
+
+Response (202 Accepted):
 ```json
 {
-  "jsonrpc": "2.0",
-  "method": "method_name",
-  "params": { ... },
-  "id": 1
+  "status": "ok",
+  "state": "scanning"
 }
 ```
 
-Responses:
-```json
-{
-  "jsonrpc": "2.0",
-  "result": { ... },
-  "id": 1
-}
-```
-
-Errors:
-```json
-{
-  "jsonrpc": "2.0",
-  "error": {
-    "code": -32600,
-    "message": "Invalid Request"
-  },
-  "id": 1
-}
-```
-
-## Available Methods
-
-### 1. Scan for WiFi Networks
-
-Start a WiFi scan in the background:
+### 2. Get Scan Results
 
 ```bash
 curl --unix-socket /var/run/wifi-commissioning.sock \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "scan",
-    "id": 1
-  }' \
-  http://localhost/
+  http://localhost/api/v1/scan/results
 ```
 
-Response:
+Response (200 OK):
 ```json
 {
-  "jsonrpc": "2.0",
-  "result": null,
-  "id": 1
-}
-```
-
-### 2. List Available Networks
-
-Retrieve scan results:
-
-```bash
-curl --unix-socket /var/run/wifi-commissioning.sock \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "list_networks",
-    "id": 2
-  }' \
-  http://localhost/
-```
-
-Response:
-```json
-{
-  "jsonrpc": "2.0",
-  "result": [
+  "status": "ok",
+  "networks": [
     {
       "ssid": "MyNetwork",
-      "signal": -45,
-      "security": "WPA2-PSK"
+      "mac": "aa:bb:cc:dd:ee:ff",
+      "channel": 6,
+      "rssi": -45
     },
     {
       "ssid": "GuestNetwork",
-      "signal": -67,
-      "security": "Open"
+      "mac": "11:22:33:44:55:66",
+      "channel": 11,
+      "rssi": -67
     }
-  ],
-  "id": 2
+  ]
 }
 ```
 
 Pretty-print with `jq`:
 ```bash
 curl -s --unix-socket /var/run/wifi-commissioning.sock \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","method":"list_networks","id":2}' \
-  http://localhost/ | jq '.result[] | {ssid, signal, security}'
+  http://localhost/api/v1/scan/results | jq '.networks[] | {ssid, rssi, channel}'
 ```
 
 ### 3. Connect to WiFi Network
 
-Connect to a network with SSID and password:
+Connect to a network with SSID and pre-shared key (64 hex characters):
 
 ```bash
-curl --unix-socket /var/run/wifi-commissioning.sock \
+curl -X POST --unix-socket /var/run/wifi-commissioning.sock \
   -H "Content-Type: application/json" \
   -d '{
-    "jsonrpc": "2.0",
-    "method": "connect",
-    "params": {
-      "ssid": "MyNetwork",
-      "password": "MyPassword123"
-    },
-    "id": 3
+    "ssid": "MyNetwork",
+    "psk": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
   }' \
-  http://localhost/
+  http://localhost/api/v1/connect
 ```
 
-Response:
+Response (202 Accepted):
 ```json
 {
-  "jsonrpc": "2.0",
-  "result": null,
-  "id": 3
+  "status": "ok",
+  "state": "connecting"
 }
 ```
 
 ### 4. Check Connection Status
 
-Get current connection state:
-
 ```bash
 curl --unix-socket /var/run/wifi-commissioning.sock \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "status",
-    "id": 4
-  }' \
-  http://localhost/
+  http://localhost/api/v1/status
 ```
 
-Response:
+Response (200 OK):
 ```json
 {
-  "jsonrpc": "2.0",
-  "result": {
-    "state": "connected",
-    "ssid": "MyNetwork"
-  },
-  "id": 4
+  "status": "ok",
+  "state": "connected",
+  "ssid": "MyNetwork",
+  "ip_address": "192.168.1.100"
 }
 ```
 
-Possible states: `idle`, `connecting`, `connected`, `error`
+Possible states: `idle`, `connecting`, `connected`, `failed`
 
 ### 5. Disconnect from Network
 
-Disconnect from the current network:
-
 ```bash
-curl --unix-socket /var/run/wifi-commissioning.sock \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "disconnect",
-    "id": 5
-  }' \
-  http://localhost/
+curl -X POST --unix-socket /var/run/wifi-commissioning.sock \
+  http://localhost/api/v1/disconnect
 ```
 
-Response:
+Response (200 OK):
 ```json
 {
-  "jsonrpc": "2.0",
-  "result": null,
-  "id": 5
+  "status": "ok"
 }
 ```
 
-## Error Codes
+## Error Responses
 
-The service returns standard JSON-RPC 2.0 error codes plus custom codes:
+Errors return the appropriate HTTP status code with a JSON body:
 
-| Code | Message | Description |
-|------|---------|-------------|
-| -32700 | Parse error | Invalid JSON |
-| -32600 | Invalid Request | Missing required fields |
-| -32601 | Method not found | Unknown method name |
-| -32602 | Invalid params | Invalid method parameters |
-| -32603 | Internal error | Service internal error |
-| -32001 | WiFi error | WiFi backend error (scan/connect failed) |
-| -32002 | State error | Invalid state for operation |
+| HTTP Status | Error Code | Condition |
+| ----------- | ---------- | --------- |
+| 400 | `invalid_params` | Invalid request body (e.g., bad PSK format) |
+| 409 | `operation_in_progress` | Scan or connect already running |
+| 409 | `invalid_state` | No scan results available |
+| 502 | `backend_error` | WiFi backend failure |
 
-Example error response:
+Example error response (409 Conflict):
 ```json
 {
-  "jsonrpc": "2.0",
-  "error": {
-    "code": -32001,
-    "message": "WiFi scan failed: Device busy"
-  },
-  "id": 1
+  "error": "operation_in_progress",
+  "message": "Operation already in progress"
 }
 ```
 
 ## Complete Workflow Example
 
 ```bash
-# 1. Start scan
-curl -s --unix-socket /var/run/wifi-commissioning.sock \
-  -d '{"jsonrpc":"2.0","method":"scan","id":1}' \
-  http://localhost/
+SOCK=/var/run/wifi-commissioning.sock
 
-# 2. Wait a moment for scan to complete
+# 1. Start scan
+curl -s -X POST --unix-socket $SOCK http://localhost/api/v1/scan
+
+# 2. Wait for scan to complete
 sleep 3
 
-# 3. List networks
-curl -s --unix-socket /var/run/wifi-commissioning.sock \
-  -d '{"jsonrpc":"2.0","method":"list_networks","id":2}' \
-  http://localhost/ | jq '.'
+# 3. Get networks
+curl -s --unix-socket $SOCK http://localhost/api/v1/scan/results | jq '.'
 
 # 4. Connect to network
-curl -s --unix-socket /var/run/wifi-commissioning.sock \
-  -d '{"jsonrpc":"2.0","method":"connect","params":{"ssid":"MyNetwork","password":"MyPass"},"id":3}' \
-  http://localhost/
+curl -s -X POST --unix-socket $SOCK \
+  -H "Content-Type: application/json" \
+  -d '{"ssid":"MyNetwork","psk":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}' \
+  http://localhost/api/v1/connect
 
 # 5. Check status
-curl -s --unix-socket /var/run/wifi-commissioning.sock \
-  -d '{"jsonrpc":"2.0","method":"status","id":4}' \
-  http://localhost/ | jq '.result'
+curl -s --unix-socket $SOCK http://localhost/api/v1/status | jq '.'
 ```
 
 ## Requirements
@@ -307,18 +233,6 @@ wifi-commissioning-service -i wlan0 -s "secret" --enable-unix-socket --socket-pa
 
 **Note:** Standalone mode is for testing only. Production deployments should use systemd socket activation.
 
-## Testing with Mock Service
-
-For local testing without hardware, you can use `socat` to create a test socket:
-
-```bash
-# Terminal 1: Create echo server
-socat UNIX-LISTEN:/tmp/test.sock,fork EXEC:'/bin/cat'
-
-# Terminal 2: Test with curl
-curl --unix-socket /tmp/test.sock -d '{"test":"data"}' http://localhost/
-```
-
 ## Troubleshooting
 
 **"Couldn't connect to server"**
@@ -332,39 +246,31 @@ curl --unix-socket /tmp/test.sock -d '{"test":"data"}' http://localhost/
 - Add your user to the appropriate group: `sudo usermod -a -G wpa_supplicant $USER`
 - Or run with sudo: `sudo ./wifi-client.sh scan`
 
-**"Method not found"**
-- Check method name spelling
-- Verify the service version supports the method
-
 ## Advanced: Batch Operations
 
 Process multiple requests in a script:
 
 ```bash
 #!/bin/bash
-SOCKET="/var/run/wifi-commissioning.sock"
-
-request() {
-    curl -s --unix-socket "$SOCKET" \
-        -H "Content-Type: application/json" \
-        -d "$1" \
-        http://localhost/
-}
+SOCK="/var/run/wifi-commissioning.sock"
+URL="http://localhost/api/v1"
 
 # Scan and wait
-request '{"jsonrpc":"2.0","method":"scan","id":1}'
+curl -s -X POST --unix-socket "$SOCK" "$URL/scan"
 sleep 3
 
-# Get networks and connect to strongest
-networks=$(request '{"jsonrpc":"2.0","method":"list_networks","id":2}')
-ssid=$(echo "$networks" | jq -r '.result | sort_by(.signal) | reverse | .[0].ssid')
+# Get networks and find strongest
+networks=$(curl -s --unix-socket "$SOCK" "$URL/scan/results")
+ssid=$(echo "$networks" | jq -r '.networks | sort_by(.rssi) | reverse | .[0].ssid')
 
 echo "Connecting to strongest network: $ssid"
-request "{\"jsonrpc\":\"2.0\",\"method\":\"connect\",\"params\":{\"ssid\":\"$ssid\",\"password\":\"$PASSWORD\"},\"id\":3}"
+curl -s -X POST --unix-socket "$SOCK" \
+  -H "Content-Type: application/json" \
+  -d "{\"ssid\":\"$ssid\",\"psk\":\"$PSK\"}" \
+  "$URL/connect"
 ```
 
 ## See Also
 
-- [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)
 - [curl Unix socket documentation](https://curl.se/docs/manpage.html#--unix-socket)
 - [Web BLE Client](../web-ble-client/README.md) - Browser-based BLE interface

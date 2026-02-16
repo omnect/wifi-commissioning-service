@@ -2,27 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Request messages from client to server
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(tag = "method", content = "params")]
-#[serde(rename_all = "snake_case")]
-pub enum Request {
-    /// Start a WiFi scan
-    Scan,
-
-    /// Get scan results
-    GetScanResults,
-
-    /// Connect to a WiFi network
-    Connect(ConnectParams),
-
-    /// Disconnect from current network
-    Disconnect,
-
-    /// Get connection status
-    GetStatus,
-}
-
 /// Parameters for connect request
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectParams {
@@ -57,52 +36,6 @@ impl ConnectParams {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_request_scan_serialization() {
-        let request = Request::Scan;
-        let json = serde_json::to_string(&request).unwrap();
-        assert_eq!(json, r#"{"method":"scan"}"#);
-
-        let deserialized: Request = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, request);
-    }
-
-    #[test]
-    fn test_request_get_scan_results() {
-        let request = Request::GetScanResults;
-        let json = serde_json::to_string(&request).unwrap();
-        assert_eq!(json, r#"{"method":"get_scan_results"}"#);
-    }
-
-    #[test]
-    fn test_request_connect_serialization() {
-        let request = Request::Connect(ConnectParams {
-            ssid: "MyNetwork".to_string(),
-            psk: "a".repeat(64),
-        });
-
-        let json = serde_json::to_string(&request).unwrap();
-        assert!(json.contains(r#""method":"connect""#));
-        assert!(json.contains(r#""ssid":"MyNetwork""#));
-
-        let deserialized: Request = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized, request);
-    }
-
-    #[test]
-    fn test_request_disconnect() {
-        let request = Request::Disconnect;
-        let json = serde_json::to_string(&request).unwrap();
-        assert_eq!(json, r#"{"method":"disconnect"}"#);
-    }
-
-    #[test]
-    fn test_request_get_status() {
-        let request = Request::GetStatus;
-        let json = serde_json::to_string(&request).unwrap();
-        assert_eq!(json, r#"{"method":"get_status"}"#);
-    }
 
     #[test]
     fn test_connect_params_decode_psk_valid() {

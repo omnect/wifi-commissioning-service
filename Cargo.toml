@@ -17,6 +17,7 @@ name = "wifi_commissioning_service"
 path = "src/lib.rs"
 
 [dependencies]
+actix-web = { version = "4.12", default-features = false, features = ["macros"] }
 bluer = { version = "0.17", default-features = false, features = ["bluetoothd"] }
 clap = { version = "4.5", default-features = false, features = ["derive", "std"] }
 futures = { version = "0.3", default-features = false }

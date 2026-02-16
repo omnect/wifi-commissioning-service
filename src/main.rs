@@ -6,10 +6,8 @@ use clap::Parser;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use wifi_commissioning_service::{
-    backend::WifiCtrlBackend,
-    config::CliArgs,
-    core::service::WifiCommissioningService,
-    transport::{ble::BleAdapter, unix_socket::UnixSocketServer},
+    backend::WifiCtrlBackend, config::CliArgs, core::service::WifiCommissioningService,
+    transport::ble::BleAdapter,
 };
 
 #[tokio::main]
@@ -53,19 +51,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start configured transports
     let mut tasks = Vec::new();
 
-    // Start Unix socket transport
+    // Start Unix socket transport (actix-web REST API over UDS)
     if args.enable_unix_socket {
         info!("Starting Unix socket transport on {}", args.socket_path);
 
-        let server = UnixSocketServer::new(
-            args.socket_path.clone(),
+        // create() binds the socket synchronously; .run() returns a Send future
+        let server = wifi_commissioning_service::transport::unix_socket::server::create(
+            &args.socket_path,
             service.scanner.clone(),
             service.connector.clone(),
-            service.authorization.clone(),
-        );
+        )?;
 
         let task = tokio::spawn(async move {
-            if let Err(e) = server.start().await {
+            if let Err(e) = server.await {
                 error!("Unix socket server error: {}", e);
             }
         });

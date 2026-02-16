@@ -2,7 +2,7 @@
 //!
 //! A service for commissioning WiFi credentials via multiple transport layers:
 //! - Bluetooth Low Energy (GATT)
-//! - Unix Domain Sockets (JSON-RPC 2.0)
+//! - Unix Domain Sockets (REST API)
 
 pub mod backend;
 pub mod config;

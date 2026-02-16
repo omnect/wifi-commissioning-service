@@ -1,11 +1,11 @@
 #!/bin/bash
 # WiFi Commissioning Unix Socket Client
-# JSON-RPC 2.0 client for testing the Unix socket transport
+# REST API client for testing the Unix socket transport
 
 set -e
 
 SOCKET_PATH="${WIFI_SOCKET_PATH:-/var/run/wifi-commissioning.sock}"
-REQUEST_ID=1
+BASE_URL="http://localhost/api/v1"
 
 # Colors for output
 RED='\033[0;31m'
@@ -19,11 +19,11 @@ usage() {
 Usage: $0 [command] [arguments]
 
 Commands:
-    scan                        Start WiFi scan
-    list                        Get scan results
-    connect <ssid> <password>   Connect to WiFi network
-    disconnect                  Disconnect from WiFi
-    status                      Get connection status
+    scan                    Start WiFi scan
+    list                    Get scan results
+    connect <ssid> <psk>    Connect to WiFi network (PSK = 64 hex chars)
+    disconnect              Disconnect from WiFi
+    status                  Get connection status
 
 Environment:
     WIFI_SOCKET_PATH    Path to Unix socket (default: /var/run/wifi-commissioning.sock)
@@ -31,68 +31,68 @@ Environment:
 Examples:
     $0 scan
     $0 list
-    $0 connect "MyNetwork" "MyPassword123"
+    $0 connect "MyNetwork" "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     $0 disconnect
     $0 status
 EOF
     exit 1
 }
 
-# JSON-RPC 2.0 request helper
-jsonrpc_request() {
+# REST API request helper
+api_request() {
     local method="$1"
-    local params="$2"
+    local path="$2"
+    local body="$3"
 
-    if [ -z "$params" ] || [ "$params" = "null" ]; then
-        request_body=$(cat <<EOF
-{
-    "jsonrpc": "2.0",
-    "method": "$method",
-    "id": $REQUEST_ID
-}
-EOF
-)
-    else
-        request_body=$(cat <<EOF
-{
-    "jsonrpc": "2.0",
-    "method": "$method",
-    "params": $params,
-    "id": $REQUEST_ID
-}
-EOF
-)
+    local curl_args=(
+        -s
+        -w "\n%{http_code}"
+        --unix-socket "$SOCKET_PATH"
+    )
+
+    if [ "$method" != "GET" ]; then
+        curl_args+=(-X "$method")
     fi
 
-    echo -e "${BLUE}→ Request:${NC}" >&2
-    echo "$request_body" | jq '.' 2>/dev/null || echo "$request_body" >&2
+    if [ -n "$body" ]; then
+        curl_args+=(-H "Content-Type: application/json" -d "$body")
+    fi
+
+    curl_args+=("${BASE_URL}${path}")
+
+    echo -e "${BLUE}→ ${method} ${path}${NC}" >&2
+    if [ -n "$body" ]; then
+        echo "$body" | jq '.' 2>/dev/null >&2 || echo "$body" >&2
+    fi
     echo "" >&2
 
-    response=$(curl -s --unix-socket "$SOCKET_PATH" \
-        -H "Content-Type: application/json" \
-        -d "$request_body" \
-        http://localhost/)
+    local output
+    output=$(curl "${curl_args[@]}")
 
-    echo -e "${BLUE}← Response:${NC}" >&2
-    echo "$response" | jq '.' 2>/dev/null || echo "$response" >&2
+    local http_code
+    http_code=$(echo "$output" | tail -n1)
+    local response
+    response=$(echo "$output" | sed '$d')
+
+    echo -e "${BLUE}← ${http_code}${NC}" >&2
+    echo "$response" | jq '.' 2>/dev/null >&2 || echo "$response" >&2
     echo "" >&2
 
-    # Check for JSON-RPC error
-    if echo "$response" | jq -e '.error' >/dev/null 2>&1; then
-        error_msg=$(echo "$response" | jq -r '.error.message')
-        error_code=$(echo "$response" | jq -r '.error.code')
-        echo -e "${RED}✗ Error $error_code: $error_msg${NC}" >&2
+    # Check for error status codes
+    if [ "$http_code" -ge 400 ]; then
+        local error_msg
+        error_msg=$(echo "$response" | jq -r '.message // .error // "Unknown error"' 2>/dev/null)
+        echo -e "${RED}Error ${http_code}: ${error_msg}${NC}" >&2
         exit 1
     fi
 
     echo "$response"
-    REQUEST_ID=$((REQUEST_ID + 1))
 }
 
 # Check if socket exists
 check_socket() {
     if [ ! -S "$SOCKET_PATH" ]; then
-        echo -e "${RED}✗ Socket not found: $SOCKET_PATH${NC}" >&2
+        echo -e "${RED}Socket not found: $SOCKET_PATH${NC}" >&2
         echo -e "${YELLOW}  Is the wifi-commissioning service running?${NC}" >&2
         exit 1
     fi
@@ -102,8 +102,8 @@ check_socket() {
 cmd_scan() {
     echo -e "${GREEN}Starting WiFi scan...${NC}"
     check_socket
-    jsonrpc_request "scan" "null" >/dev/null
-    echo -e "${GREEN}✓ Scan started${NC}"
+    api_request POST "/scan" >/dev/null
+    echo -e "${GREEN}Scan started${NC}"
     echo -e "${YELLOW}  Use '$0 list' to get results${NC}"
 }
 
@@ -111,18 +111,17 @@ cmd_scan() {
 cmd_list() {
     echo -e "${GREEN}Fetching scan results...${NC}"
     check_socket
-    response=$(jsonrpc_request "list_networks" "null")
+    response=$(api_request GET "/scan/results")
 
-    # Pretty print the networks
-    networks=$(echo "$response" | jq -r '.result[]? | "\(.ssid)\t\(.signal)\t\(.security)"' 2>/dev/null)
+    networks=$(echo "$response" | jq -r '.networks[]? | "\(.ssid)\t\(.rssi)\t\(.channel)"' 2>/dev/null)
 
     if [ -n "$networks" ]; then
-        echo -e "${GREEN}✓ Available networks:${NC}"
+        echo -e "${GREEN}Available networks:${NC}"
         echo ""
-        printf "%-32s %-10s %s\n" "SSID" "Signal" "Security"
-        printf "%-32s %-10s %s\n" "----" "------" "--------"
-        echo "$networks" | while IFS=$'\t' read -r ssid signal security; do
-            printf "%-32s %-10s %s\n" "$ssid" "$signal" "$security"
+        printf "%-32s %-10s %s\n" "SSID" "RSSI" "Channel"
+        printf "%-32s %-10s %s\n" "----" "----" "-------"
+        echo "$networks" | while IFS=$'\t' read -r ssid rssi channel; do
+            printf "%-32s %-10s %s\n" "$ssid" "$rssi" "$channel"
         done
     else
         echo -e "${YELLOW}No networks found. Try running scan first.${NC}"
@@ -132,21 +131,20 @@ cmd_list() {
 # Connect to WiFi
 cmd_connect() {
     local ssid="$1"
-    local password="$2"
+    local psk="$2"
 
-    if [ -z "$ssid" ] || [ -z "$password" ]; then
-        echo -e "${RED}✗ Usage: $0 connect <ssid> <password>${NC}" >&2
+    if [ -z "$ssid" ] || [ -z "$psk" ]; then
+        echo -e "${RED}Usage: $0 connect <ssid> <psk>${NC}" >&2
+        echo -e "${YELLOW}  PSK must be 64 hex characters (hex-encoded 32 bytes)${NC}" >&2
         exit 1
     fi
 
     echo -e "${GREEN}Connecting to '$ssid'...${NC}"
     check_socket
 
-    params=$(jq -n --arg ssid "$ssid" --arg password "$password" \
-        '{ssid: $ssid, password: $password}')
-
-    jsonrpc_request "connect" "$params" >/dev/null
-    echo -e "${GREEN}✓ Connection initiated${NC}"
+    body=$(jq -n --arg ssid "$ssid" --arg psk "$psk" '{ssid: $ssid, psk: $psk}')
+    api_request POST "/connect" "$body" >/dev/null
+    echo -e "${GREEN}Connection initiated${NC}"
     echo -e "${YELLOW}  Use '$0 status' to check connection status${NC}"
 }
 
@@ -154,23 +152,27 @@ cmd_connect() {
 cmd_disconnect() {
     echo -e "${GREEN}Disconnecting...${NC}"
     check_socket
-    jsonrpc_request "disconnect" "null" >/dev/null
-    echo -e "${GREEN}✓ Disconnected${NC}"
+    api_request POST "/disconnect" >/dev/null
+    echo -e "${GREEN}Disconnected${NC}"
 }
 
 # Get connection status
 cmd_status() {
     echo -e "${GREEN}Fetching connection status...${NC}"
     check_socket
-    response=$(jsonrpc_request "status" "null")
+    response=$(api_request GET "/status")
 
-    state=$(echo "$response" | jq -r '.result.state' 2>/dev/null)
-    ssid=$(echo "$response" | jq -r '.result.ssid // "N/A"' 2>/dev/null)
+    state=$(echo "$response" | jq -r '.state' 2>/dev/null)
+    ssid=$(echo "$response" | jq -r '.ssid // "N/A"' 2>/dev/null)
+    ip=$(echo "$response" | jq -r '.ip_address // "N/A"' 2>/dev/null)
 
-    echo -e "${GREEN}✓ Status:${NC}"
+    echo -e "${GREEN}Status:${NC}"
     echo "  State: $state"
     if [ "$ssid" != "N/A" ] && [ "$ssid" != "null" ]; then
         echo "  SSID:  $ssid"
+    fi
+    if [ "$ip" != "N/A" ] && [ "$ip" != "null" ]; then
+        echo "  IP:    $ip"
     fi
 }
 
@@ -195,7 +197,7 @@ case "${1:-}" in
         usage
         ;;
     *)
-        echo -e "${RED}✗ Unknown command: $1${NC}" >&2
+        echo -e "${RED}Unknown command: $1${NC}" >&2
         echo "" >&2
         usage
         ;;

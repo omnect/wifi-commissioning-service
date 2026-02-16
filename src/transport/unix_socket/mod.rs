@@ -1,11 +1,4 @@
-//! Unix domain socket transport layer
+//! Unix domain socket transport layer (REST API via actix-web)
 
-pub mod handler;
+pub mod handlers;
 pub mod server;
-pub mod session;
-
-pub use {
-    handler::RequestHandler,
-    server::UnixSocketServer,
-    session::{SessionReader, UnixSocketSession},
-};

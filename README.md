@@ -11,9 +11,9 @@ This service is part of the [omnect](https://www.omnect.io/home) device manageme
 This service enables WiFi configuration through two transport mechanisms:
 
 - **Bluetooth LE (GATT)**: Mobile app integration with backwards-compatible UUIDs
-- **Unix Socket (JSON-RPC 2.0)**: Local IPC for system integration and testing
+- **Unix Socket (REST API)**: Local IPC for system integration and testing
 
-The service provides a clean architecture with separation of concerns, comprehensive test coverage (101 tests), and full `wpa_supplicant` integration.
+The service provides a clean architecture with separation of concerns, comprehensive test coverage, and full `wpa_supplicant` integration.
 
 ## Production Status
 
@@ -27,7 +27,7 @@ The service provides a clean architecture with separation of concerns, comprehen
 - **Backend Abstraction**: `WifiBackend` trait with `wifi-ctrl` implementation
 - **Dual Transports**: BLE GATT and Unix socket with shared service layer
 - **State Machines**: Explicit state management for scan and connection workflows
-- **Protocol Layer**: JSON-RPC 2.0 for Unix socket, GATT protocol for BLE
+- **Protocol Layer**: REST API (actix-web) for Unix socket, GATT protocol for BLE
 
 ### Configuration Persistence
 
@@ -60,15 +60,14 @@ src/
 │   │   ├── gatt.rs         # GATT server
 │   │   └── characteristics.rs  # Characteristic handlers
 │   │
-│   └── unix_socket/        # Unix socket
-│       ├── server.rs       # Socket listener
-│       ├── session.rs      # Client sessions
-│       └── handler.rs      # JSON-RPC dispatch
+│   └── unix_socket/        # Unix socket (REST API)
+│       ├── server.rs       # actix-web server over UDS
+│       └── handlers.rs     # REST endpoint handlers
 │
 └── protocol/               # Message definitions
     ├── request.rs          # Request types
     ├── response.rs         # Response types
-    └── jsonrpc.rs          # JSON-RPC 2.0
+    └── notification.rs     # Notification types
 ```
 
 ## Building
@@ -94,7 +93,7 @@ cargo build --release --features systemd
 
 ### Testing
 
-Run the comprehensive test suite (91 tests):
+Run the comprehensive test suite (75 tests):
 
 ```bash
 cargo test
@@ -186,62 +185,57 @@ The BLE interface exposes three GATT services:
 - `2`: Success (scan complete/connected)
 - `3`: Error
 
-## Unix Socket Protocol
+## Unix Socket REST API
 
-### JSON-RPC 2.0
+The Unix socket transport exposes an HTTP REST API (via actix-web) over a Unix domain socket.
 
-All requests follow JSON-RPC 2.0 format:
+### Endpoints
 
-```json
-{"jsonrpc": "2.0", "method": "<method>", "params": {...}, "id": 1}
-```
+| Method | Path | Description | Success |
+| ------ | ---- | ----------- | ------- |
+| POST | `/api/v1/scan` | Start WiFi scan | 202 |
+| GET | `/api/v1/scan/results` | Get scan results | 200 |
+| POST | `/api/v1/connect` | Connect to network | 202 |
+| POST | `/api/v1/disconnect` | Disconnect | 200 |
+| GET | `/api/v1/status` | Connection status | 200 |
 
-### Methods
+### Error Responses
 
-**`authorize`**
-```json
-{"jsonrpc": "2.0", "method": "authorize", "params": {"key": "<hex-sha3>"}, "id": 1}
-```
-
-**`scan`**
-```json
-{"jsonrpc": "2.0", "method": "scan", "params": {}, "id": 2}
-```
-
-**`get_scan_results`**
-```json
-{"jsonrpc": "2.0", "method": "get_scan_results", "params": {}, "id": 3}
-```
-
-**`connect`**
-```json
-{"jsonrpc": "2.0", "method": "connect", "params": {"ssid": "MyNetwork", "psk": "password123"}, "id": 4}
-```
-
-**`get_connection_state`**
-```json
-{"jsonrpc": "2.0", "method": "get_connection_state", "params": {}, "id": 5}
-```
-
-### Notifications
-
-The server sends notifications for state changes:
+Errors return the appropriate HTTP status code with a JSON body:
 
 ```json
-{"jsonrpc": "2.0", "method": "scan_state_changed", "params": {"state": "finished", "networks": [...]}}
-{"jsonrpc": "2.0", "method": "connection_state_changed", "params": {"state": "connected", "ip": "192.168.1.100"}}
+{"error": "operation_in_progress", "message": "Operation already in progress"}
 ```
 
-### Testing with `websocat`
+| HTTP Status | Error Code | Condition |
+| ----------- | ---------- | --------- |
+| 400 | `invalid_params` | Invalid request body (e.g., bad PSK format) |
+| 409 | `operation_in_progress` | Scan or connect already running |
+| 409 | `invalid_state` | No scan results available |
+| 502 | `backend_error` | WiFi backend failure |
+
+### Quick Test with curl
 
 ```bash
-# Connect to socket
-websocat UNIX:/run/wifi-commissioning.sock
+SOCK=/run/wifi-commissioning.sock
 
-# Example session:
-{"jsonrpc":"2.0","method":"scan","params":{},"id":1}
-{"jsonrpc":"2.0","method":"get_scan_results","params":{},"id":2}
-{"jsonrpc":"2.0","method":"connect","params":{"ssid":"MyWiFi","psk":"mypassword"},"id":3}
+# Start scan
+curl -X POST --unix-socket $SOCK http://localhost/api/v1/scan
+
+# Get scan results
+curl --unix-socket $SOCK http://localhost/api/v1/scan/results
+
+# Connect (PSK is hex-encoded 32 bytes = 64 hex chars)
+curl -X POST --unix-socket $SOCK \
+  -H "Content-Type: application/json" \
+  -d '{"ssid":"MyNetwork","psk":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}' \
+  http://localhost/api/v1/connect
+
+# Check status
+curl --unix-socket $SOCK http://localhost/api/v1/status
+
+# Disconnect
+curl -X POST --unix-socket $SOCK http://localhost/api/v1/disconnect
 ```
 
 ## systemd Integration
@@ -307,7 +301,7 @@ See [examples/web-ble-client/README.md](examples/web-ble-client/README.md) for d
 
 ### Unix Socket Client
 
-For testing the JSON-RPC 2.0 interface over Unix socket:
+For testing the REST API over Unix socket:
 
 ```bash
 cd examples/unix-socket-client
@@ -315,20 +309,20 @@ cd examples/unix-socket-client
 # Using the helper script
 ./wifi-client.sh scan
 ./wifi-client.sh list
-./wifi-client.sh connect "MyNetwork" "password123"
+./wifi-client.sh connect "MyNetwork" "0123456789abcdef..."
+./wifi-client.sh status
+./wifi-client.sh disconnect
 
 # Or raw curl commands
-curl --unix-socket /var/run/wifi-commissioning.sock \
-  -d '{"jsonrpc":"2.0","method":"scan","id":1}' \
-  http://localhost/
+curl -X POST --unix-socket /run/wifi-commissioning.sock http://localhost/api/v1/scan
+curl --unix-socket /run/wifi-commissioning.sock http://localhost/api/v1/status
 ```
 
-The Unix socket client provides command-line access to all WiFi commissioning functions.
 See [examples/unix-socket-client/README.md](examples/unix-socket-client/README.md) for detailed usage instructions.
 
 ### Unit and Integration Tests
 
-The project includes 91 comprehensive tests covering:
+The project includes 75 comprehensive tests covering:
 
 - Authorization service (5 tests)
 - Scanner service (5 tests)
@@ -337,10 +331,8 @@ The project includes 91 comprehensive tests covering:
 - BLE characteristics (26 tests - auth, scan, connect, multi-part writes)
 - BLE session (6 tests)
 - BLE UUIDs (2 tests)
-- Unix socket handler (4 tests)
-- Unix socket session (3 tests)
-- Unix socket server (2 tests)
-- Protocol layer (26 tests - JSON-RPC, requests, responses, notifications)
+- REST API handlers (4 tests)
+- Protocol layer (11 tests - requests, responses, notifications)
 
 Run tests with:
 ```bash
