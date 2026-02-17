@@ -2,7 +2,7 @@
 
 use tokio::process::Command;
 use tokio::sync::broadcast;
-use tracing::{Instrument, debug, error, info_span, instrument, warn};
+use tracing::{Instrument, debug, info_span, instrument, warn};
 use wifi_ctrl::sta::{Broadcast, BroadcastReceiver, RequestClient, WifiSetup};
 
 use crate::{
@@ -25,8 +25,15 @@ pub struct WifiCtrlBackend {
 }
 
 impl WifiCtrlBackend {
+    /// Creates a new backend and spawns the wpa_supplicant station runtime.
+    ///
+    /// Returns the backend and a `JoinHandle` for the station runtime task.
+    /// The caller **must** monitor the handle — if the station exits, all
+    /// wpa_supplicant communication is dead.
     #[instrument(skip_all, fields(interface = %interface))]
-    pub async fn new(interface: String) -> WifiResult<Self> {
+    pub async fn new(
+        interface: String,
+    ) -> WifiResult<(Self, tokio::task::JoinHandle<WifiResult<()>>)> {
         let path = format!("/var/run/wpa_supplicant/{}", interface);
         let mut setup =
             WifiSetup::new().map_err(|e| WifiError::WpaSupplicantError(e.to_string()))?;
@@ -36,22 +43,26 @@ impl WifiCtrlBackend {
         let broadcast_receiver = setup.get_broadcast_receiver();
         let station = setup.complete();
 
-        // Spawn the station runtime
+        // Spawn the station runtime — caller must await / select on the handle
         let span = info_span!("wpa_station_runtime");
-        tokio::spawn(
+        let handle = tokio::spawn(
             async move {
-                if let Err(e) = station.run().await {
-                    error!("WifiStation runtime error: {}", e);
-                }
+                station
+                    .run()
+                    .await
+                    .map_err(|e| WifiError::WpaSupplicantError(e.to_string()))
             }
             .instrument(span),
         );
 
-        Ok(Self {
-            interface,
-            client,
-            broadcast_receiver,
-        })
+        Ok((
+            Self {
+                interface,
+                client,
+                broadcast_receiver,
+            },
+            handle,
+        ))
     }
 
     /// Convert frequency (MHz) to channel number

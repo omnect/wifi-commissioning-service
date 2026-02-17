@@ -43,7 +43,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Create WiFi backend
-    let backend = Arc::new(WifiCtrlBackend::new(args.interface.clone()).await?);
+    let (backend, station_handle) = WifiCtrlBackend::new(args.interface.clone()).await?;
+    let backend = Arc::new(backend);
     info!("WiFi backend initialized for interface: {}", args.interface);
 
     // Create WiFi commissioning service
@@ -54,14 +55,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service = Arc::new(WifiCommissioningService::new(backend, secret));
     info!("WiFi commissioning service created");
 
-    // Start configured transports
-    let mut tasks = Vec::new();
+    // Start configured transports — any task exiting is fatal
+    let mut transport_tasks = tokio::task::JoinSet::new();
 
     // Start Unix socket transport (actix-web REST API over UDS)
     if args.enable_unix_socket {
         info!("Starting Unix socket transport on {}", args.socket_path);
 
-        // create() binds the socket synchronously; .run() returns a Send future
         let server = wifi_commissioning_service::transport::unix_socket::server::create(
             &args.socket_path,
             service.scanner.clone(),
@@ -69,16 +69,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         )?;
 
         let span = info_span!("unix_socket_transport");
-        let task = tokio::spawn(
+        transport_tasks.spawn(
             async move {
-                if let Err(e) = server.await {
-                    error!("Unix socket server error: {}", e);
-                }
+                server
+                    .await
+                    .map_err(|e| format!("Unix socket server: {e}"))
             }
             .instrument(span),
         );
-
-        tasks.push(task);
     }
 
     // Start BLE transport
@@ -86,8 +84,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Starting BLE transport");
 
         match start_ble_transport(service.clone()).await {
-            Ok(task) => {
-                tasks.push(task);
+            Ok(handle) => {
+                transport_tasks.spawn(async move {
+                    handle
+                        .await
+                        .map_err(|e| format!("BLE task panicked: {e}"))?
+                        .map_err(|e| format!("BLE adapter: {e}"))
+                });
             }
             Err(e) => {
                 error!("Failed to start BLE transport: {}", e);
@@ -104,7 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "systemd")]
     sd_notify::notify(false, &[sd_notify::NotifyState::Ready])?;
 
-    // Wait for shutdown signal
+    // Wait for shutdown signal or fatal task failure
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {
             info!("Received SIGINT (Ctrl+C), shutting down gracefully");
@@ -112,12 +115,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ = shutdown_signal() => {
             info!("Received SIGTERM, shutting down gracefully");
         }
-        _ = async {
-            for task in tasks {
-                let _ = task.await;
+        result = station_handle => {
+            match result {
+                Ok(Err(e)) => {
+                    error!("wpa_supplicant station runtime failed: {e}");
+                    return Err(e.into());
+                }
+                Err(e) => {
+                    error!("wpa_supplicant station task panicked: {e}");
+                    return Err(e.into());
+                }
+                Ok(Ok(())) => {
+                    error!("wpa_supplicant station exited unexpectedly");
+                    return Err("wpa_supplicant station exited".into());
+                }
             }
-        } => {
-            info!("All tasks completed");
+        }
+        Some(result) = transport_tasks.join_next() => {
+            match result {
+                Ok(Err(e)) => {
+                    error!("Transport failed: {e}");
+                    return Err(e.into());
+                }
+                Err(e) => {
+                    error!("Transport task panicked: {e}");
+                    return Err(e.into());
+                }
+                Ok(Ok(())) => {
+                    error!("Transport exited unexpectedly");
+                    return Err("transport exited".into());
+                }
+            }
         }
     }
 
@@ -142,7 +170,10 @@ async fn shutdown_signal() {
 
 async fn start_ble_transport(
     service: Arc<WifiCommissioningService<WifiCtrlBackend>>,
-) -> Result<tokio::task::JoinHandle<()>, Box<dyn std::error::Error>> {
+) -> Result<
+    tokio::task::JoinHandle<Result<(), bluer::Error>>,
+    Box<dyn std::error::Error>,
+> {
     use wifi_commissioning_service::transport::ble::GattServer;
 
     let mut adapter = BleAdapter::new("WiFi-Setup".to_string()).await?;
@@ -152,14 +183,9 @@ async fn start_ble_transport(
     adapter.start(gatt_server.clone()).await?;
 
     let span = info_span!("ble_transport");
-    let task = tokio::spawn(
-        async move {
-            if let Err(e) = adapter.run_event_loop().await {
-                error!("BLE adapter error: {}", e);
-            }
-        }
-        .instrument(span),
+    let handle = tokio::spawn(
+        async move { adapter.run_event_loop().await }.instrument(span),
     );
 
-    Ok(task)
+    Ok(handle)
 }
