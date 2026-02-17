@@ -21,9 +21,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer().with_span_events(FmtSpan::CLOSE))
         .init();
 
+    info!(
+        version = env!("CARGO_PKG_VERSION"),
+        git_ref = env!("GIT_SHORT_REF"),
+        "Starting WiFi commissioning service"
+    );
+
     // Parse CLI arguments
     let args = CliArgs::parse();
-    info!(?args, "Starting WiFi commissioning service");
+    info!(?args);
 
     // Validate configuration
     if !args.enable_ble && !args.enable_unix_socket {
