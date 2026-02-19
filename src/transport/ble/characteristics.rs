@@ -306,9 +306,22 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
                 match self.service.connect(&ssid, &psk).await {
                     Ok(_) => {
                         debug!("Connection initiated for SSID: {}", ssid);
-                        let status = self.service.connection_status().await;
-                        let _ = self.connect_state_tx.send(u8::from(status.state));
                         self.session.write().await.clear_buffers().await;
+
+                        // Connection runs in background — spawn task to await
+                        // completion and send state notification
+                        let service = self.service.clone();
+                        let tx = self.connect_state_tx.clone();
+                        tokio::spawn(async move {
+                            loop {
+                                let status = service.connection_status().await;
+                                if status.state != ConnectionState::Connecting {
+                                    let _ = tx.send(u8::from(status.state));
+                                    return;
+                                }
+                                tokio::time::sleep(SCAN_POLL_INTERVAL).await;
+                            }
+                        });
                         Ok(())
                     }
                     Err(e) => {
