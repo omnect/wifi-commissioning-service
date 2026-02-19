@@ -2,7 +2,7 @@
 
 use bluer::gatt::local::ReqError;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, instrument, warn};
 
 use crate::{
@@ -19,6 +19,8 @@ pub struct CharacteristicHandler<B: WifiBackend> {
     service: Arc<WifiCommissioningService<B>>,
     session: Arc<RwLock<BleSession>>,
     result_offset: Arc<RwLock<usize>>,
+    scan_state_tx: watch::Sender<u8>,
+    connect_state_tx: watch::Sender<u8>,
 }
 
 impl<B: WifiBackend> CharacteristicHandler<B> {
@@ -27,11 +29,25 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
         service: Arc<WifiCommissioningService<B>>,
         session: Arc<RwLock<BleSession>>,
     ) -> Self {
+        let (scan_state_tx, _) = watch::channel(0u8);
+        let (connect_state_tx, _) = watch::channel(0u8);
         Self {
             service,
             session,
             result_offset: Arc::new(RwLock::new(0)),
+            scan_state_tx,
+            connect_state_tx,
         }
+    }
+
+    /// Subscribe to scan state change notifications
+    pub fn subscribe_scan_state(&self) -> watch::Receiver<u8> {
+        self.scan_state_tx.subscribe()
+    }
+
+    /// Subscribe to connect state change notifications
+    pub fn subscribe_connect_state(&self) -> watch::Receiver<u8> {
+        self.connect_state_tx.subscribe()
     }
 
     /// Check if session is authorized
@@ -122,8 +138,13 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
                 debug!("Starting scan (via state write)");
                 *self.result_offset.write().await = 0;
                 match self.service.start_scan().await {
-                    Ok(_) => Ok(()),
+                    Ok(_) => {
+                        let state = u8::from(self.service.scan_state().await);
+                        let _ = self.scan_state_tx.send(state);
+                        Ok(())
+                    }
                     Err(e) => {
+                        let _ = self.scan_state_tx.send(u8::from(ScanState::Error));
                         error!("Scan failed: {}", e);
                         Err(ReqError::Failed)
                     }
@@ -312,10 +333,14 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
                 match self.service.connect(&ssid, &psk).await {
                     Ok(_) => {
                         debug!("Connection initiated for SSID: {}", ssid);
+                        let status = self.service.connection_status().await;
+                        let _ = self.connect_state_tx.send(u8::from(status.state));
                         self.session.write().await.clear_buffers().await;
                         Ok(())
                     }
                     Err(e) => {
+                        let _ =
+                            self.connect_state_tx.send(u8::from(ConnectionState::Failed));
                         error!("Connection failed: {}", e);
                         Err(ReqError::Failed)
                     }
@@ -325,7 +350,11 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
                 // Disconnect
                 debug!("Initiating disconnection (via state write)");
                 match self.service.disconnect().await {
-                    Ok(_) => Ok(()),
+                    Ok(_) => {
+                        let status = self.service.connection_status().await;
+                        let _ = self.connect_state_tx.send(u8::from(status.state));
+                        Ok(())
+                    }
                     Err(e) => {
                         error!("Disconnection failed: {}", e);
                         Err(ReqError::Failed)
@@ -337,34 +366,6 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
                 Err(ReqError::InvalidValueLength)
             }
         }
-    }
-}
-
-/// Trait for notifying characteristic changes
-///
-/// Note: Full BLE notification implementation requires storing characteristic handles
-/// obtained during GATT registration with bluer. The current implementation logs
-/// state changes for debugging. Client applications should poll the state characteristics
-/// or rely on the read/notify mechanisms configured in the GATT server.
-pub trait CharacteristicNotifier {
-    /// Notify scan state change
-    fn notify_scan_state(&self, state: ScanState);
-
-    /// Notify connection state change
-    fn notify_connection_state(&self, state: ConnectionState);
-}
-
-impl<B: WifiBackend> CharacteristicNotifier for CharacteristicHandler<B> {
-    fn notify_scan_state(&self, state: ScanState) {
-        debug!("Scan state changed: {:?}", state);
-        // Notifications are configured in GATT server with `notify: Some(Default::default())`
-        // Client polling of scan_state characteristic will receive updated values
-    }
-
-    fn notify_connection_state(&self, state: ConnectionState) {
-        debug!("Connection state changed: {:?}", state);
-        // Notifications are configured in GATT server with `notify: Some(Default::default())`
-        // Client polling of connect_state characteristic will receive updated values
     }
 }
 

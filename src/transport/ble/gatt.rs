@@ -3,13 +3,14 @@
 use bluer::{
     Adapter,
     gatt::local::{
-        Application, Characteristic, CharacteristicRead, CharacteristicWrite,
-        CharacteristicWriteMethod, Service,
+        Application, Characteristic, CharacteristicNotify, CharacteristicNotifyMethod,
+        CharacteristicRead, CharacteristicWrite, CharacteristicWriteMethod, Service,
     },
 };
+use futures::FutureExt;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::{
     backend::WifiBackend,
@@ -129,8 +130,27 @@ impl<B: WifiBackend> GattServer<B> {
                         }),
                         ..Default::default()
                     }),
-                    notify: Some(bluer::gatt::local::CharacteristicNotify {
+                    notify: Some(CharacteristicNotify {
                         notify: true,
+                        method: CharacteristicNotifyMethod::Fun({
+                            let handler = handler.clone();
+                            Box::new(move |mut notifier| {
+                                let mut rx = handler.subscribe_scan_state();
+                                async move {
+                                    tokio::spawn(async move {
+                                        debug!("Scan state notification session started");
+                                        while rx.changed().await.is_ok() {
+                                            let state = *rx.borrow();
+                                            if notifier.notify(vec![state]).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                        debug!("Scan state notification session ended");
+                                    });
+                                }
+                                .boxed()
+                            })
+                        }),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -250,8 +270,27 @@ impl<B: WifiBackend> GattServer<B> {
                         }),
                         ..Default::default()
                     }),
-                    notify: Some(bluer::gatt::local::CharacteristicNotify {
+                    notify: Some(CharacteristicNotify {
                         notify: true,
+                        method: CharacteristicNotifyMethod::Fun({
+                            let handler = handler.clone();
+                            Box::new(move |mut notifier| {
+                                let mut rx = handler.subscribe_connect_state();
+                                async move {
+                                    tokio::spawn(async move {
+                                        debug!("Connect state notification session started");
+                                        while rx.changed().await.is_ok() {
+                                            let state = *rx.borrow();
+                                            if notifier.notify(vec![state]).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                        debug!("Connect state notification session ended");
+                                    });
+                                }
+                                .boxed()
+                            })
+                        }),
                         ..Default::default()
                     }),
                     ..Default::default()
