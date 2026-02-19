@@ -2,6 +2,7 @@
 
 use bluer::{
     adv::{Advertisement, AdvertisementHandle},
+    gatt::local::ApplicationHandle,
     Adapter, AdapterEvent,
 };
 use futures::StreamExt;
@@ -19,6 +20,7 @@ pub struct BleAdapter<B: WifiBackend> {
     adapter: Adapter,
     session: Arc<RwLock<BleSession>>,
     gatt_server: Option<Arc<GattServer<B>>>,
+    gatt_handle: Option<ApplicationHandle>,
     adv_handle: Option<AdvertisementHandle>,
     device_name: String,
 }
@@ -36,6 +38,7 @@ impl<B: WifiBackend> BleAdapter<B> {
             adapter,
             session: Arc::new(RwLock::new(BleSession::new())),
             gatt_server: None,
+            gatt_handle: None,
             adv_handle: None,
             device_name,
         })
@@ -60,8 +63,8 @@ impl<B: WifiBackend> BleAdapter<B> {
         // Set adapter name
         self.adapter.set_alias(self.device_name.clone()).await?;
 
-        // Register GATT application
-        gatt_server.register(&self.adapter).await?;
+        // Register GATT application — hold the handle to keep it alive
+        self.gatt_handle = Some(gatt_server.register(&self.adapter).await?);
 
         // Register LE advertisement so Web Bluetooth clients can discover us.
         // Only advertise local_name + discoverable; service UUIDs are omitted
@@ -88,13 +91,9 @@ impl<B: WifiBackend> BleAdapter<B> {
     pub async fn stop(&mut self) -> Result<(), bluer::Error> {
         info!("Stopping BLE adapter");
 
-        // Drop advertisement handle to unregister
+        // Drop handles to unregister (order: advertisement first, then GATT)
         self.adv_handle.take();
-
-        // Unregister GATT application if registered
-        if let Some(gatt_server) = &self.gatt_server {
-            gatt_server.unregister(&self.adapter).await?;
-        }
+        self.gatt_handle.take();
 
         info!("BLE adapter stopped");
         Ok(())

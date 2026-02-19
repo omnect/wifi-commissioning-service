@@ -224,18 +224,15 @@ impl<B: WifiBackend> GattServer<B> {
     }
 
     /// Register GATT application with adapter
-    pub async fn register(&self, adapter: &Adapter) -> Result<(), bluer::Error> {
+    pub async fn register(
+        &self,
+        adapter: &Adapter,
+    ) -> Result<bluer::gatt::local::ApplicationHandle, bluer::Error> {
         info!("Registering GATT application");
         let app = self.build_application().await;
-        adapter.serve_gatt_application(app).await?;
+        let handle = adapter.serve_gatt_application(app).await?;
         info!("GATT application registered");
-        Ok(())
+        Ok(handle)
     }
 
-    /// Unregister GATT application
-    pub async fn unregister(&self, _adapter: &Adapter) -> Result<(), bluer::Error> {
-        info!("Unregistering GATT application");
-        // Note: bluer handles cleanup automatically when application is dropped
-        Ok(())
-    }
 }
