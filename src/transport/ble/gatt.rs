@@ -79,30 +79,9 @@ impl<B: WifiBackend> GattServer<B> {
             uuid: SCAN_SERVICE_UUID,
             primary: true,
             characteristics: vec![
-                // Scan control characteristic
+                // Scan status characteristic (read/write/notify)
                 Characteristic {
-                    uuid: SCAN_CONTROL_CHAR_UUID,
-                    write: Some(CharacteristicWrite {
-                        write: true,
-                        write_without_response: false,
-                        encrypt_write: false,
-                        method: CharacteristicWriteMethod::Fun({
-                            let handler = handler.clone();
-                            Box::new(move |new_value, _req| {
-                                let handler = handler.clone();
-                                Box::pin(async move {
-                                    handler.handle_scan_control_write(new_value).await
-                                })
-                            })
-                        }),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-                // Scan state characteristic (read/write/notify)
-                // Web client writes state value here to trigger scan
-                Characteristic {
-                    uuid: SCAN_STATE_CHAR_UUID,
+                    uuid: SCAN_STATUS_CHAR_UUID,
                     read: Some(CharacteristicRead {
                         read: true,
                         encrypt_read: false,
@@ -110,7 +89,7 @@ impl<B: WifiBackend> GattServer<B> {
                             let handler = handler.clone();
                             Box::new(move |_req| {
                                 let handler = handler.clone();
-                                Box::pin(async move { handler.handle_scan_state_read().await })
+                                Box::pin(async move { handler.handle_scan_status_read().await })
                             })
                         },
                         ..Default::default()
@@ -124,7 +103,7 @@ impl<B: WifiBackend> GattServer<B> {
                             Box::new(move |new_value, _req| {
                                 let handler = handler.clone();
                                 Box::pin(async move {
-                                    handler.handle_scan_state_write(new_value).await
+                                    handler.handle_scan_status_write(new_value).await
                                 })
                             })
                         }),
@@ -155,9 +134,9 @@ impl<B: WifiBackend> GattServer<B> {
                     }),
                     ..Default::default()
                 },
-                // Scan results characteristic
+                // Scan select characteristic (read chunk count, write index)
                 Characteristic {
-                    uuid: SCAN_RESULTS_CHAR_UUID,
+                    uuid: SCAN_SELECT_CHAR_UUID,
                     read: Some(CharacteristicRead {
                         read: true,
                         encrypt_read: false,
@@ -165,7 +144,39 @@ impl<B: WifiBackend> GattServer<B> {
                             let handler = handler.clone();
                             Box::new(move |_req| {
                                 let handler = handler.clone();
-                                Box::pin(async move { handler.handle_scan_results_read().await })
+                                Box::pin(async move { handler.handle_scan_select_read().await })
+                            })
+                        },
+                        ..Default::default()
+                    }),
+                    write: Some(CharacteristicWrite {
+                        write: true,
+                        write_without_response: false,
+                        encrypt_write: false,
+                        method: CharacteristicWriteMethod::Fun({
+                            let handler = handler.clone();
+                            Box::new(move |new_value, _req| {
+                                let handler = handler.clone();
+                                Box::pin(async move {
+                                    handler.handle_scan_select_write(new_value).await
+                                })
+                            })
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                // Scan result characteristic (read selected chunk)
+                Characteristic {
+                    uuid: SCAN_RESULT_CHAR_UUID,
+                    read: Some(CharacteristicRead {
+                        read: true,
+                        encrypt_read: false,
+                        fun: {
+                            let handler = handler.clone();
+                            Box::new(move |_req| {
+                                let handler = handler.clone();
+                                Box::pin(async move { handler.handle_scan_result_read().await })
                             })
                         },
                         ..Default::default()
@@ -183,64 +194,7 @@ impl<B: WifiBackend> GattServer<B> {
             uuid: CONNECT_SERVICE_UUID,
             primary: true,
             characteristics: vec![
-                // SSID characteristic
-                Characteristic {
-                    uuid: CONNECT_SSID_CHAR_UUID,
-                    write: Some(CharacteristicWrite {
-                        write: true,
-                        write_without_response: false,
-                        encrypt_write: false,
-                        method: CharacteristicWriteMethod::Fun({
-                            let handler = handler.clone();
-                            Box::new(move |new_value, _req| {
-                                let handler = handler.clone();
-                                Box::pin(async move { handler.handle_ssid_write(new_value).await })
-                            })
-                        }),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-                // PSK characteristic
-                Characteristic {
-                    uuid: CONNECT_PSK_CHAR_UUID,
-                    write: Some(CharacteristicWrite {
-                        write: true,
-                        write_without_response: false,
-                        encrypt_write: false,
-                        method: CharacteristicWriteMethod::Fun({
-                            let handler = handler.clone();
-                            Box::new(move |new_value, _req| {
-                                let handler = handler.clone();
-                                Box::pin(async move { handler.handle_psk_write(new_value).await })
-                            })
-                        }),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-                // Control characteristic
-                Characteristic {
-                    uuid: CONNECT_CONTROL_CHAR_UUID,
-                    write: Some(CharacteristicWrite {
-                        write: true,
-                        write_without_response: false,
-                        encrypt_write: false,
-                        method: CharacteristicWriteMethod::Fun({
-                            let handler = handler.clone();
-                            Box::new(move |new_value, _req| {
-                                let handler = handler.clone();
-                                Box::pin(async move {
-                                    handler.handle_connect_control_write(new_value).await
-                                })
-                            })
-                        }),
-                        ..Default::default()
-                    }),
-                    ..Default::default()
-                },
-                // State characteristic (read/write/notify)
-                // Web client writes state value here to trigger connect
+                // Connect state characteristic (read/write/notify)
                 Characteristic {
                     uuid: CONNECT_STATE_CHAR_UUID,
                     read: Some(CharacteristicRead {
@@ -289,6 +243,54 @@ impl<B: WifiBackend> GattServer<B> {
                                     });
                                 }
                                 .boxed()
+                            })
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                // SSID characteristic (read/write)
+                Characteristic {
+                    uuid: CONNECT_SSID_CHAR_UUID,
+                    read: Some(CharacteristicRead {
+                        read: true,
+                        encrypt_read: false,
+                        fun: {
+                            let handler = handler.clone();
+                            Box::new(move |_req| {
+                                let handler = handler.clone();
+                                Box::pin(async move { handler.handle_ssid_read().await })
+                            })
+                        },
+                        ..Default::default()
+                    }),
+                    write: Some(CharacteristicWrite {
+                        write: true,
+                        write_without_response: false,
+                        encrypt_write: false,
+                        method: CharacteristicWriteMethod::Fun({
+                            let handler = handler.clone();
+                            Box::new(move |new_value, _req| {
+                                let handler = handler.clone();
+                                Box::pin(async move { handler.handle_ssid_write(new_value).await })
+                            })
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                },
+                // PSK characteristic (write-only)
+                Characteristic {
+                    uuid: CONNECT_PSK_CHAR_UUID,
+                    write: Some(CharacteristicWrite {
+                        write: true,
+                        write_without_response: false,
+                        encrypt_write: false,
+                        method: CharacteristicWriteMethod::Fun({
+                            let handler = handler.clone();
+                            Box::new(move |new_value, _req| {
+                                let handler = handler.clone();
+                                Box::pin(async move { handler.handle_psk_write(new_value).await })
                             })
                         }),
                         ..Default::default()

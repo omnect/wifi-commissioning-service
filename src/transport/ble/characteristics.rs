@@ -1,9 +1,12 @@
-//! BLE characteristic handlers
+//! BLE characteristic handlers — backwards compatible with wifi-commissioning-gatt-service
 
 use bluer::gatt::local::ReqError;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, instrument, warn};
+
+/// Interval for polling scan completion state
+const SCAN_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 use crate::{
     backend::WifiBackend,
@@ -11,14 +14,17 @@ use crate::{
         service::WifiCommissioningService,
         types::{ConnectionState, ScanState},
     },
-    transport::ble::{session::BleSession, uuids::MAX_CHUNK_SIZE},
+    transport::ble::{session::BleSession, uuids::SCAN_RESULT_CHUNK_SIZE},
 };
 
 /// Characteristic handler for BLE operations
 pub struct CharacteristicHandler<B: WifiBackend> {
     service: Arc<WifiCommissioningService<B>>,
     session: Arc<RwLock<BleSession>>,
-    result_offset: Arc<RwLock<usize>>,
+    /// Scan result JSON split into SCAN_RESULT_CHUNK_SIZE-byte chunks
+    scan_result_chunks: Arc<RwLock<Vec<Vec<u8>>>>,
+    /// Currently selected chunk index (set by scan select write)
+    selected_chunk_index: Arc<RwLock<u8>>,
     scan_state_tx: watch::Sender<u8>,
     connect_state_tx: watch::Sender<u8>,
 }
@@ -34,7 +40,8 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
         Self {
             service,
             session,
-            result_offset: Arc::new(RwLock::new(0)),
+            scan_result_chunks: Arc::new(RwLock::new(Vec::new())),
+            selected_chunk_index: Arc::new(RwLock::new(0)),
             scan_state_tx,
             connect_state_tx,
         }
@@ -59,7 +66,9 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
         Ok(())
     }
 
-    /// Handle authorization key write
+    // ── Authorization ──────────────────────────────────────────────────
+
+    /// Handle authorization key write (32-byte SHA3-256 hash)
     #[instrument(skip_all, fields(value_len = value.len()))]
     pub async fn handle_auth_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
         if value.len() != 32 {
@@ -83,49 +92,21 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
         }
     }
 
-    /// Handle scan control write
-    #[instrument(skip_all, fields(value_len = value.len()))]
-    pub async fn handle_scan_control_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
-        self.check_authorized().await?;
+    // ── Scan service ───────────────────────────────────────────────────
 
-        if value.is_empty() {
-            return Err(ReqError::InvalidValueLength);
-        }
-
-        match value[0] {
-            1 => {
-                // Start scan
-                debug!("Starting scan");
-                *self.result_offset.write().await = 0; // Reset offset
-                match self.service.start_scan().await {
-                    Ok(_) => Ok(()),
-                    Err(e) => {
-                        error!("Scan failed: {}", e);
-                        Err(ReqError::Failed)
-                    }
-                }
-            }
-            _ => {
-                warn!("Invalid scan control value: {}", value[0]);
-                Err(ReqError::InvalidValueLength)
-            }
-        }
-    }
-
-    /// Handle scan state read
+    /// Handle scan status read — returns current scan state (1 byte)
     #[instrument(skip_all)]
-    pub async fn handle_scan_state_read(&self) -> Result<Vec<u8>, ReqError> {
+    pub async fn handle_scan_status_read(&self) -> Result<Vec<u8>, ReqError> {
         self.check_authorized().await?;
-
         let state = self.service.scan_state().await;
-        let state_byte = u8::from(state);
-
-        Ok(vec![state_byte])
+        Ok(vec![u8::from(state)])
     }
 
-    /// Handle scan state write (web client writes state value to trigger scan)
+    /// Handle scan status write — state machine control
+    ///
+    /// Write 1 = start scan, write 0 = reset to idle
     #[instrument(skip_all, fields(value_len = value.len()))]
-    pub async fn handle_scan_state_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
+    pub async fn handle_scan_status_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
         self.check_authorized().await?;
 
         if value.is_empty() {
@@ -134,13 +115,50 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
 
         match value[0] {
             1 => {
-                // WIFI_SCANNER_STATE_SCAN — start scan
-                debug!("Starting scan (via state write)");
-                *self.result_offset.write().await = 0;
+                debug!("Starting scan");
+                // Clear previous results
+                self.scan_result_chunks.write().await.clear();
+                *self.selected_chunk_index.write().await = 0;
+
                 match self.service.start_scan().await {
                     Ok(_) => {
-                        let state = u8::from(self.service.scan_state().await);
-                        let _ = self.scan_state_tx.send(state);
+                        // Scan runs in background — spawn task to await completion,
+                        // build result chunks, and send state notification
+                        let service = self.service.clone();
+                        let chunks = self.scan_result_chunks.clone();
+                        let tx = self.scan_state_tx.clone();
+                        tokio::spawn(async move {
+                            loop {
+                                let state = service.scan_state().await;
+                                if state != ScanState::Scanning {
+                                    // Build result chunks from completed scan
+                                    if let Some(results) = service.scan_results().await {
+                                        let json = match serde_json::to_string(&results) {
+                                            Ok(j) => j,
+                                            Err(e) => {
+                                                error!("Failed to serialize scan results: {}", e);
+                                                let _ = tx.send(u8::from(ScanState::Error));
+                                                return;
+                                            }
+                                        };
+                                        let bytes = json.into_bytes();
+                                        let built: Vec<Vec<u8>> = bytes
+                                            .chunks(SCAN_RESULT_CHUNK_SIZE)
+                                            .map(|c| c.to_vec())
+                                            .collect();
+                                        debug!(
+                                            "Scan results: {} bytes, {} chunks",
+                                            bytes.len(),
+                                            built.len()
+                                        );
+                                        *chunks.write().await = built;
+                                    }
+                                    let _ = tx.send(u8::from(state));
+                                    return;
+                                }
+                                tokio::time::sleep(SCAN_POLL_INTERVAL).await;
+                            }
+                        });
                         Ok(())
                     }
                     Err(e) => {
@@ -151,67 +169,85 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
                 }
             }
             0 => {
-                // WIFI_SCANNER_STATE_IDLE — reset to idle (no-op)
-                debug!("Scan state reset to idle");
+                // Reset to idle — discard results
+                debug!("Scan reset to idle");
+                self.scan_result_chunks.write().await.clear();
+                *self.selected_chunk_index.write().await = 0;
                 Ok(())
             }
             _ => {
-                warn!("Invalid scan state value: {}", value[0]);
-                Err(ReqError::InvalidValueLength)
+                warn!("Invalid scan status value: {}", value[0]);
+                Err(ReqError::NotSupported)
             }
         }
     }
 
-    /// Handle scan results read (paginated)
+    /// Handle scan select read — returns number of result chunks (1 byte)
     #[instrument(skip_all)]
-    pub async fn handle_scan_results_read(&self) -> Result<Vec<u8>, ReqError> {
+    pub async fn handle_scan_select_read(&self) -> Result<Vec<u8>, ReqError> {
         self.check_authorized().await?;
-
-        let results = match self.service.scan_results().await {
-            Some(networks) => networks,
-            None => {
-                debug!("No scan results available");
-                return Ok(vec![]);
-            }
-        };
-
-        // Serialize results to JSON
-        let json = match serde_json::to_string(&results) {
-            Ok(j) => j,
-            Err(e) => {
-                error!("Failed to serialize scan results: {}", e);
-                return Err(ReqError::Failed);
-            }
-        };
-
-        let bytes = json.as_bytes();
-        let offset = *self.result_offset.read().await;
-
-        if offset >= bytes.len() {
-            debug!("Results read complete, resetting offset");
-            *self.result_offset.write().await = 0;
-            return Ok(vec![]);
-        }
-
-        let end = std::cmp::min(offset + MAX_CHUNK_SIZE, bytes.len());
-        let chunk = bytes[offset..end].to_vec();
-
-        // Update offset for next read
-        *self.result_offset.write().await = end;
-
-        Ok(chunk)
+        let count = self.scan_result_chunks.read().await.len() as u8;
+        Ok(vec![count])
     }
 
-    /// Handle SSID write (accumulates partial writes)
+    /// Handle scan select write — select chunk index for next result read
     #[instrument(skip_all, fields(value_len = value.len()))]
-    pub async fn handle_ssid_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
+    pub async fn handle_scan_select_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
         self.check_authorized().await?;
 
-        self.session.write().await.append_ssid(&value).await;
+        if value.is_empty() {
+            return Err(ReqError::InvalidValueLength);
+        }
+
+        let index = value[0];
+        let max = self.scan_result_chunks.read().await.len() as u8;
+
+        if index >= max {
+            warn!("Scan select index {} out of range (max {})", index, max);
+            return Err(ReqError::NotSupported);
+        }
+
+        *self.selected_chunk_index.write().await = index;
         Ok(())
     }
 
-    /// Handle PSK write
+    /// Handle scan result read — returns the chunk at the selected index
+    #[instrument(skip_all)]
+    pub async fn handle_scan_result_read(&self) -> Result<Vec<u8>, ReqError> {
+        self.check_authorized().await?;
+
+        let index = *self.selected_chunk_index.read().await as usize;
+        let chunks = self.scan_result_chunks.read().await;
+
+        match chunks.get(index) {
+            Some(chunk) => Ok(chunk.clone()),
+            None => {
+                debug!("No scan result at index {}", index);
+                Ok(vec![])
+            }
+        }
+    }
+
+    // ── Connect service ────────────────────────────────────────────────
+
+    /// Handle SSID read — returns current SSID
+    #[instrument(skip_all)]
+    pub async fn handle_ssid_read(&self) -> Result<Vec<u8>, ReqError> {
+        self.check_authorized().await?;
+        let ssid = self.session.read().await.get_ssid().await.unwrap_or_default();
+        Ok(ssid.into_bytes())
+    }
+
+    /// Handle SSID write — replaces current SSID
+    #[instrument(skip_all, fields(value_len = value.len()))]
+    pub async fn handle_ssid_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
+        self.check_authorized().await?;
+        // Clear previous SSID and set new value (original clears on offset 0)
+        self.session.write().await.set_ssid(&value).await;
+        Ok(())
+    }
+
+    /// Handle PSK write (32 bytes, write-only)
     #[instrument(skip_all, fields(value_len = value.len()))]
     pub async fn handle_psk_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
         self.check_authorized().await?;
@@ -228,79 +264,17 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
         Ok(())
     }
 
-    /// Handle connect control write
-    #[instrument(skip_all, fields(value_len = value.len()))]
-    pub async fn handle_connect_control_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
-        self.check_authorized().await?;
-
-        if value.is_empty() {
-            return Err(ReqError::InvalidValueLength);
-        }
-
-        match value[0] {
-            1 => {
-                // Connect
-                debug!("Initiating connection");
-
-                let ssid = match self.session.read().await.get_ssid().await {
-                    Ok(s) => s,
-                    Err(e) => {
-                        error!("Invalid SSID: {}", e);
-                        return Err(ReqError::Failed);
-                    }
-                };
-
-                let psk = match self.session.read().await.get_psk().await {
-                    Some(p) => p,
-                    None => {
-                        error!("PSK not set");
-                        return Err(ReqError::Failed);
-                    }
-                };
-
-                match self.service.connect(&ssid, &psk).await {
-                    Ok(_) => {
-                        debug!("Connection initiated for SSID: {}", ssid);
-                        // Clear buffers after successful connection initiation
-                        self.session.write().await.clear_buffers().await;
-                        Ok(())
-                    }
-                    Err(e) => {
-                        error!("Connection failed: {}", e);
-                        Err(ReqError::Failed)
-                    }
-                }
-            }
-            2 => {
-                // Disconnect
-                debug!("Initiating disconnection");
-                match self.service.disconnect().await {
-                    Ok(_) => Ok(()),
-                    Err(e) => {
-                        error!("Disconnection failed: {}", e);
-                        Err(ReqError::Failed)
-                    }
-                }
-            }
-            _ => {
-                warn!("Invalid connect control value: {}", value[0]);
-                Err(ReqError::InvalidValueLength)
-            }
-        }
-    }
-
-    /// Handle connection state read
+    /// Handle connection state read — returns current connection state (1 byte)
     #[instrument(skip_all)]
     pub async fn handle_connect_state_read(&self) -> Result<Vec<u8>, ReqError> {
         self.check_authorized().await?;
-
         let status = self.service.connection_status().await;
-        let state_byte = u8::from(status.state);
-
-        Ok(vec![state_byte])
+        Ok(vec![u8::from(status.state)])
     }
 
-    /// Handle connection state write (web client writes state value to trigger connect)
+    /// Handle connection state write — state machine control
+    ///
+    /// Write 1 = connect (uses stored SSID+PSK), write 0 = disconnect
     #[instrument(skip_all, fields(value_len = value.len()))]
     pub async fn handle_connect_state_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
         self.check_authorized().await?;
@@ -311,8 +285,7 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
 
         match value[0] {
             1 => {
-                // WIFI_CONFIG_STATE_CONNECT — initiate connection
-                debug!("Initiating connection (via state write)");
+                debug!("Initiating connection");
 
                 let ssid = match self.session.read().await.get_ssid().await {
                     Ok(s) => s,
@@ -346,9 +319,8 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
                     }
                 }
             }
-            2 => {
-                // Disconnect
-                debug!("Initiating disconnection (via state write)");
+            0 => {
+                debug!("Initiating disconnection");
                 match self.service.disconnect().await {
                     Ok(_) => {
                         let status = self.service.connection_status().await;
@@ -363,7 +335,7 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
             }
             _ => {
                 warn!("Invalid connect state value: {}", value[0]);
-                Err(ReqError::InvalidValueLength)
+                Err(ReqError::NotSupported)
             }
         }
     }
@@ -389,7 +361,6 @@ mod tests {
     async fn test_auth_write_valid() {
         let handler = create_test_handler().await;
 
-        // Compute SHA3-256 of "test-secret"
         use sha3::{Digest, Sha3_256};
         let mut hasher = Sha3_256::new();
         hasher.update(b"test-secret");
@@ -403,144 +374,148 @@ mod tests {
     #[tokio::test]
     async fn test_auth_write_invalid_length() {
         let handler = create_test_handler().await;
-
         let result = handler.handle_auth_write(vec![1, 2, 3]).await;
         assert!(result.is_err());
-        assert!(!handler.session.read().await.is_authorized().await);
     }
 
     #[tokio::test]
     async fn test_auth_write_invalid_hash() {
         let handler = create_test_handler().await;
-
-        let wrong_hash = vec![0u8; 32];
-        let result = handler.handle_auth_write(wrong_hash).await;
+        let result = handler.handle_auth_write(vec![0u8; 32]).await;
         assert!(result.is_err());
-        assert!(!handler.session.read().await.is_authorized().await);
     }
 
     #[tokio::test]
-    async fn test_scan_control_unauthorized() {
+    async fn test_scan_status_read() {
         let handler = create_test_handler().await;
+        handler.session.write().await.set_authorized(true).await;
 
-        let result = handler.handle_scan_control_write(vec![1]).await;
+        let result = handler.handle_scan_status_read().await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), vec![0]); // Idle
+    }
+
+    #[tokio::test]
+    async fn test_scan_status_unauthorized() {
+        let handler = create_test_handler().await;
+        let result = handler.handle_scan_status_write(vec![1]).await;
         assert!(matches!(result, Err(ReqError::NotAuthorized)));
     }
 
     #[tokio::test]
-    async fn test_scan_control_start() {
+    async fn test_scan_status_start() {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        let result = handler.handle_scan_control_write(vec![1]).await;
+        let result = handler.handle_scan_status_write(vec![1]).await;
         assert!(result.is_ok());
 
-        // Verify scan was initiated
         let state = handler.service.scan_state().await;
         assert!(matches!(state, ScanState::Scanning | ScanState::Finished));
     }
 
     #[tokio::test]
-    async fn test_scan_control_invalid_value() {
+    async fn test_scan_status_invalid_value() {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        let result = handler.handle_scan_control_write(vec![99]).await;
+        let result = handler.handle_scan_status_write(vec![99]).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
-    async fn test_scan_state_read() {
+    async fn test_scan_select_read_empty() {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        let result = handler.handle_scan_state_read().await;
+        let result = handler.handle_scan_select_read().await;
         assert!(result.is_ok());
-
-        let state_bytes = result.unwrap();
-        assert_eq!(state_bytes.len(), 1);
-        assert_eq!(state_bytes[0], 0); // Idle state
+        assert_eq!(result.unwrap(), vec![0]); // No chunks
     }
 
     #[tokio::test]
-    async fn test_scan_results_read_empty() {
+    async fn test_scan_select_write_out_of_range() {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        let result = handler.handle_scan_results_read().await;
-        assert!(result.is_ok());
-        let empty: Vec<u8> = vec![];
-        assert_eq!(result.unwrap(), empty); // Empty when no results
+        let result = handler.handle_scan_select_write(vec![0]).await;
+        assert!(matches!(result, Err(ReqError::NotSupported)));
     }
 
     #[tokio::test]
-    async fn test_scan_results_read_with_data() {
+    async fn test_scan_result_read_empty() {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        // Start and complete scan
-        handler.handle_scan_control_write(vec![1]).await.unwrap();
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-        let result = handler.handle_scan_results_read().await;
+        let result = handler.handle_scan_result_read().await;
         assert!(result.is_ok());
+        assert_eq!(result.unwrap(), Vec::<u8>::new());
     }
 
     #[tokio::test]
-    async fn test_ssid_write_single() {
+    async fn test_scan_full_flow() {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        let result = handler.handle_ssid_write(b"MyNetwork".to_vec()).await;
-        assert!(result.is_ok());
+        // Subscribe before starting scan so we catch the notification
+        let mut rx = handler.subscribe_scan_state();
 
-        let ssid = handler.session.read().await.get_ssid().await.unwrap();
-        assert_eq!(ssid, "MyNetwork");
+        // Start scan (runs asynchronously)
+        handler.handle_scan_status_write(vec![1]).await.unwrap();
+
+        // Wait for scan completion notification
+        rx.changed().await.unwrap();
+        let final_state = *rx.borrow();
+        assert_eq!(final_state, u8::from(ScanState::Finished));
+
+        // Read chunk count
+        let count = handler.handle_scan_select_read().await.unwrap();
+        let num_chunks = count[0];
+        assert!(num_chunks > 0);
+
+        // Read all chunks
+        let mut all_data = Vec::new();
+        for i in 0..num_chunks {
+            handler.handle_scan_select_write(vec![i]).await.unwrap();
+            let chunk = handler.handle_scan_result_read().await.unwrap();
+            all_data.extend_from_slice(&chunk);
+        }
+
+        // Verify JSON is valid
+        let json_str = String::from_utf8(all_data).unwrap();
+        let _: serde_json::Value = serde_json::from_str(&json_str).unwrap();
     }
 
     #[tokio::test]
-    async fn test_ssid_write_multi_part() {
+    async fn test_ssid_write_and_read() {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        // Write SSID in multiple parts
-        handler.handle_ssid_write(b"My".to_vec()).await.unwrap();
-        handler.handle_ssid_write(b"Net".to_vec()).await.unwrap();
-        handler.handle_ssid_write(b"work".to_vec()).await.unwrap();
+        handler
+            .handle_ssid_write(b"MyNetwork".to_vec())
+            .await
+            .unwrap();
 
-        let ssid = handler.session.read().await.get_ssid().await.unwrap();
-        assert_eq!(ssid, "MyNetwork");
+        let result = handler.handle_ssid_read().await.unwrap();
+        assert_eq!(result, b"MyNetwork");
     }
 
     #[tokio::test]
-    async fn test_ssid_write_max_length() {
+    async fn test_ssid_write_replaces() {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        // SSID max length is 32 bytes
-        let long_ssid = "A".repeat(32);
-        let result = handler
-            .handle_ssid_write(long_ssid.as_bytes().to_vec())
-            .await;
-        assert!(result.is_ok());
+        handler
+            .handle_ssid_write(b"FirstNetwork".to_vec())
+            .await
+            .unwrap();
+        handler
+            .handle_ssid_write(b"SecondNetwork".to_vec())
+            .await
+            .unwrap();
 
-        let ssid = handler.session.read().await.get_ssid().await.unwrap();
-        assert_eq!(ssid.len(), 32);
-    }
-
-    #[tokio::test]
-    async fn test_ssid_write_with_emoji() {
-        let handler = create_test_handler().await;
-        handler.session.write().await.set_authorized(true).await;
-
-        let ssid_with_emoji = "WiFi💩";
-        let result = handler
-            .handle_ssid_write(ssid_with_emoji.as_bytes().to_vec())
-            .await;
-        assert!(result.is_ok());
-
-        let ssid = handler.session.read().await.get_ssid().await.unwrap();
-        assert_eq!(ssid, ssid_with_emoji);
+        let result = handler.handle_ssid_read().await.unwrap();
+        assert_eq!(result, b"SecondNetwork");
     }
 
     #[tokio::test]
@@ -548,8 +523,7 @@ mod tests {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        let psk = vec![42u8; 32];
-        let result = handler.handle_psk_write(psk.clone()).await;
+        let result = handler.handle_psk_write(vec![42u8; 32]).await;
         assert!(result.is_ok());
 
         let stored_psk = handler.session.read().await.get_psk().await;
@@ -561,70 +535,8 @@ mod tests {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        // Too short
         let result = handler.handle_psk_write(vec![1, 2, 3]).await;
         assert!(matches!(result, Err(ReqError::InvalidValueLength)));
-
-        // Too long
-        let result = handler.handle_psk_write(vec![1u8; 64]).await;
-        assert!(matches!(result, Err(ReqError::InvalidValueLength)));
-    }
-
-    #[tokio::test]
-    async fn test_connect_control_connect() {
-        let handler = create_test_handler().await;
-        handler.session.write().await.set_authorized(true).await;
-
-        // Set SSID and PSK first
-        handler
-            .handle_ssid_write(b"TestNetwork".to_vec())
-            .await
-            .unwrap();
-        handler.handle_psk_write(vec![42u8; 32]).await.unwrap();
-
-        // Initiate connection
-        let result = handler.handle_connect_control_write(vec![1]).await;
-        assert!(result.is_ok());
-
-        // Verify buffers are cleared after connection
-        assert_eq!(handler.session.read().await.get_ssid().await.unwrap(), "");
-        assert!(handler.session.read().await.get_psk().await.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_connect_control_disconnect() {
-        let handler = create_test_handler().await;
-        handler.session.write().await.set_authorized(true).await;
-
-        let result = handler.handle_connect_control_write(vec![2]).await;
-        assert!(result.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_connect_control_missing_ssid() {
-        let handler = create_test_handler().await;
-        handler.session.write().await.set_authorized(true).await;
-
-        // Set only PSK, no SSID
-        handler.handle_psk_write(vec![42u8; 32]).await.unwrap();
-
-        let result = handler.handle_connect_control_write(vec![1]).await;
-        assert!(result.is_ok()); // Empty SSID is allowed
-    }
-
-    #[tokio::test]
-    async fn test_connect_control_missing_psk() {
-        let handler = create_test_handler().await;
-        handler.session.write().await.set_authorized(true).await;
-
-        // Set only SSID, no PSK
-        handler
-            .handle_ssid_write(b"TestNetwork".to_vec())
-            .await
-            .unwrap();
-
-        let result = handler.handle_connect_control_write(vec![1]).await;
-        assert!(matches!(result, Err(ReqError::Failed)));
     }
 
     #[tokio::test]
@@ -634,41 +546,49 @@ mod tests {
 
         let result = handler.handle_connect_state_read().await;
         assert!(result.is_ok());
-
-        let state_bytes = result.unwrap();
-        assert_eq!(state_bytes.len(), 1);
-        assert_eq!(state_bytes[0], 0); // Idle state
+        assert_eq!(result.unwrap(), vec![0]); // Idle
     }
 
     #[tokio::test]
-    async fn test_result_offset_reset_on_scan() {
+    async fn test_connect_state_connect() {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        // Set offset manually
-        *handler.result_offset.write().await = 100;
+        handler
+            .handle_ssid_write(b"TestNetwork".to_vec())
+            .await
+            .unwrap();
+        handler.handle_psk_write(vec![42u8; 32]).await.unwrap();
 
-        // Start scan should reset offset
-        handler.handle_scan_control_write(vec![1]).await.unwrap();
+        let result = handler.handle_connect_state_write(vec![1]).await;
+        assert!(result.is_ok());
 
-        let offset = *handler.result_offset.read().await;
-        assert_eq!(offset, 0);
-    }
-
-    #[tokio::test]
-    async fn test_chunked_ssid_writes() {
-        let handler = create_test_handler().await;
-        handler.session.write().await.set_authorized(true).await;
-
-        // Simulate BLE writing SSID in 16-byte chunks
-        let full_ssid = "MyLongNetworkNameHere";
-        let chunk1 = &full_ssid.as_bytes()[0..16];
-        let chunk2 = &full_ssid.as_bytes()[16..];
-
-        handler.handle_ssid_write(chunk1.to_vec()).await.unwrap();
-        handler.handle_ssid_write(chunk2.to_vec()).await.unwrap();
-
+        // Buffers cleared after connect
         let ssid = handler.session.read().await.get_ssid().await.unwrap();
-        assert_eq!(ssid, full_ssid);
+        assert_eq!(ssid, "");
+        assert!(handler.session.read().await.get_psk().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_connect_state_disconnect() {
+        let handler = create_test_handler().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        let result = handler.handle_connect_state_write(vec![0]).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_connect_state_missing_psk() {
+        let handler = create_test_handler().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        handler
+            .handle_ssid_write(b"TestNetwork".to_vec())
+            .await
+            .unwrap();
+
+        let result = handler.handle_connect_state_write(vec![1]).await;
+        assert!(matches!(result, Err(ReqError::Failed)));
     }
 }

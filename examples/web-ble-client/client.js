@@ -9,18 +9,18 @@
 
 // Wi-Fi Scanner Service BLE GATT Services And Characteristic UUIDs
 const SVC_WIFI_SCANNER_UUID             = 'd69a37ee-1d8a-4329-bd24-25db4af3c863';
-const CHR_WIFI_SCANNER_STATE_UUID       = 'd69a37ee-1d8a-4329-bd24-25db4af3c868';
-const CHR_WIFI_SCANNER_RESULT_UUID      = 'd69a37ee-1d8a-4329-bd24-25db4af3c869';
-const CHR_WIFI_SCANNER_SELECT_UUID      = 'd69a37ee-1d8a-4329-bd24-25db4af3c867';
+const CHR_WIFI_SCANNER_STATE_UUID       = '811ce666-22e0-4a6d-a50f-0c78e076faa0';
+const CHR_WIFI_SCANNER_RESULT_UUID      = '811ce666-22e0-4a6d-a50f-0c78e076faa2';
+const CHR_WIFI_SCANNER_SELECT_UUID      = '811ce666-22e0-4a6d-a50f-0c78e076faa1';
 
 // Wi-Fi Configurator Service BLE GATT Services And Characteristic UUIDs
 const SVC_WIFI_CONFIG_UUID              = 'd69a37ee-1d8a-4329-bd24-25db4af3c864';
-const CHR_WIFI_CONFIG_STATE_UUID        = 'd69a37ee-1d8a-4329-bd24-25db4af3c86d';
-const CHR_WIFI_CONFIG_SSID_UUID         = 'd69a37ee-1d8a-4329-bd24-25db4af3c86a';
-const CHR_WIFI_CONFIG_PASSWORD_UUID     = 'd69a37ee-1d8a-4329-bd24-25db4af3c86b';
+const CHR_WIFI_CONFIG_STATE_UUID        = '811ce666-22e0-4a6d-a50f-0c78e076faa3';
+const CHR_WIFI_CONFIG_SSID_UUID         = '811ce666-22e0-4a6d-a50f-0c78e076faa4';
+const CHR_WIFI_CONFIG_PASSWORD_UUID     = '811ce666-22e0-4a6d-a50f-0c78e076faa5';
 
 const SVC_WIFI_AUTH_UUID                = 'd69a37ee-1d8a-4329-bd24-25db4af3c865';
-const CHR_WIFI_AUTH_KEY_UUID            = 'd69a37ee-1d8a-4329-bd24-25db4af3c866';
+const CHR_WIFI_AUTH_KEY_UUID            = '811ce666-22e0-4a6d-a50f-0c78e076faa6';
 
 // Wi-Fi Scanner State Machine States
 const WIFI_SCANNER_STATE_IDLE     = 0;

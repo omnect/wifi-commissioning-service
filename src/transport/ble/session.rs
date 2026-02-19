@@ -45,6 +45,13 @@ impl BleSession {
         self.ssid_buffer.write().await.extend_from_slice(data);
     }
 
+    /// Replace SSID buffer contents
+    pub async fn set_ssid(&self, data: &[u8]) {
+        let mut buf = self.ssid_buffer.write().await;
+        buf.clear();
+        buf.extend_from_slice(data);
+    }
+
     /// Get accumulated SSID as UTF-8 string
     pub async fn get_ssid(&self) -> Result<String, String> {
         let buffer = self.ssid_buffer.read().await;
