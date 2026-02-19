@@ -113,7 +113,10 @@ impl<B: WifiBackend> GattServer<B> {
                         },
                         ..Default::default()
                     }),
-                    notify: Some(Default::default()),
+                    notify: Some(bluer::gatt::local::CharacteristicNotify {
+                        notify: true,
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 },
                 // Scan results characteristic
@@ -215,7 +218,10 @@ impl<B: WifiBackend> GattServer<B> {
                         },
                         ..Default::default()
                     }),
-                    notify: Some(Default::default()),
+                    notify: Some(bluer::gatt::local::CharacteristicNotify {
+                        notify: true,
+                        ..Default::default()
+                    }),
                     ..Default::default()
                 },
             ],
