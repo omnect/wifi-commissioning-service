@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{Instrument, info_span, instrument};
+use tracing::{Instrument, Span, info_span, instrument};
 
 use crate::{
     backend::WifiBackend,
@@ -110,7 +110,8 @@ impl<B: WifiBackend> ConnectionService<B> {
         let ssid_owned = ssid.to_string();
         let psk_owned = *psk;
 
-        let span = info_span!("connect_task", ssid = %ssid_owned);
+        let span = info_span!(parent: Span::none(), "connect_task", ssid = %ssid_owned);
+        span.follows_from(Span::current());
         tokio::spawn(
             async move {
                 match backend.connect_and_wait(&ssid_owned, &psk_owned).await {

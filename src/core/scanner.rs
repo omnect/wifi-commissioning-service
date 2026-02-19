@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{Instrument, info_span, instrument};
+use tracing::{Instrument, Span, info_span, instrument};
 
 use crate::{
     backend::WifiBackend,
@@ -103,7 +103,8 @@ impl<B: WifiBackend> ScanService<B> {
         let backend = self.backend.clone();
         let state_machine = self.state_machine.clone();
 
-        let span = info_span!("scan_task");
+        let span = info_span!(parent: Span::none(), "scan_task");
+        span.follows_from(Span::current());
         tokio::spawn(
             async move {
                 match backend.scan().await {
