@@ -170,10 +170,11 @@ impl WifiBackend for WifiCtrlBackend {
             .await
             .map_err(|e| WifiError::WpaSupplicantError(format!("Failed to set SSID: {}", e)))?;
 
-        // Set PSK
+        // Set raw PSK (unquoted hex — wifi-ctrl's set_network_psk quotes the
+        // value, making wpa_supplicant treat it as a passphrase and re-derive)
         let psk_hex = hex::encode(psk);
         self.client
-            .set_network_psk(network_id, psk_hex)
+            .send_custom(format!("SET_NETWORK {network_id} psk {psk_hex}"))
             .await
             .map_err(|e| WifiError::WpaSupplicantError(format!("Failed to set PSK: {}", e)))?;
 
