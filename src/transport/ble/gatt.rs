@@ -98,7 +98,8 @@ impl<B: WifiBackend> GattServer<B> {
                     }),
                     ..Default::default()
                 },
-                // Scan state characteristic
+                // Scan state characteristic (read/write/notify)
+                // Web client writes state value here to trigger scan
                 Characteristic {
                     uuid: SCAN_STATE_CHAR_UUID,
                     read: Some(CharacteristicRead {
@@ -111,6 +112,21 @@ impl<B: WifiBackend> GattServer<B> {
                                 Box::pin(async move { handler.handle_scan_state_read().await })
                             })
                         },
+                        ..Default::default()
+                    }),
+                    write: Some(CharacteristicWrite {
+                        write: true,
+                        write_without_response: false,
+                        encrypt_write: false,
+                        method: CharacteristicWriteMethod::Fun({
+                            let handler = handler.clone();
+                            Box::new(move |new_value, _req| {
+                                let handler = handler.clone();
+                                Box::pin(async move {
+                                    handler.handle_scan_state_write(new_value).await
+                                })
+                            })
+                        }),
                         ..Default::default()
                     }),
                     notify: Some(bluer::gatt::local::CharacteristicNotify {
@@ -203,7 +219,8 @@ impl<B: WifiBackend> GattServer<B> {
                     }),
                     ..Default::default()
                 },
-                // State characteristic
+                // State characteristic (read/write/notify)
+                // Web client writes state value here to trigger connect
                 Characteristic {
                     uuid: CONNECT_STATE_CHAR_UUID,
                     read: Some(CharacteristicRead {
@@ -216,6 +233,21 @@ impl<B: WifiBackend> GattServer<B> {
                                 Box::pin(async move { handler.handle_connect_state_read().await })
                             })
                         },
+                        ..Default::default()
+                    }),
+                    write: Some(CharacteristicWrite {
+                        write: true,
+                        write_without_response: false,
+                        encrypt_write: false,
+                        method: CharacteristicWriteMethod::Fun({
+                            let handler = handler.clone();
+                            Box::new(move |new_value, _req| {
+                                let handler = handler.clone();
+                                Box::pin(async move {
+                                    handler.handle_connect_state_write(new_value).await
+                                })
+                            })
+                        }),
                         ..Default::default()
                     }),
                     notify: Some(bluer::gatt::local::CharacteristicNotify {

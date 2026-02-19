@@ -107,6 +107,40 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
         Ok(vec![state_byte])
     }
 
+    /// Handle scan state write (web client writes state value to trigger scan)
+    #[instrument(skip_all, fields(value_len = value.len()))]
+    pub async fn handle_scan_state_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
+        self.check_authorized().await?;
+
+        if value.is_empty() {
+            return Err(ReqError::InvalidValueLength);
+        }
+
+        match value[0] {
+            1 => {
+                // WIFI_SCANNER_STATE_SCAN — start scan
+                debug!("Starting scan (via state write)");
+                *self.result_offset.write().await = 0;
+                match self.service.start_scan().await {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        error!("Scan failed: {}", e);
+                        Err(ReqError::Failed)
+                    }
+                }
+            }
+            0 => {
+                // WIFI_SCANNER_STATE_IDLE — reset to idle (no-op)
+                debug!("Scan state reset to idle");
+                Ok(())
+            }
+            _ => {
+                warn!("Invalid scan state value: {}", value[0]);
+                Err(ReqError::InvalidValueLength)
+            }
+        }
+    }
+
     /// Handle scan results read (paginated)
     #[instrument(skip_all)]
     pub async fn handle_scan_results_read(&self) -> Result<Vec<u8>, ReqError> {
@@ -243,6 +277,66 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
         let state_byte = u8::from(status.state);
 
         Ok(vec![state_byte])
+    }
+
+    /// Handle connection state write (web client writes state value to trigger connect)
+    #[instrument(skip_all, fields(value_len = value.len()))]
+    pub async fn handle_connect_state_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
+        self.check_authorized().await?;
+
+        if value.is_empty() {
+            return Err(ReqError::InvalidValueLength);
+        }
+
+        match value[0] {
+            1 => {
+                // WIFI_CONFIG_STATE_CONNECT — initiate connection
+                debug!("Initiating connection (via state write)");
+
+                let ssid = match self.session.read().await.get_ssid().await {
+                    Ok(s) => s,
+                    Err(e) => {
+                        error!("Invalid SSID: {}", e);
+                        return Err(ReqError::Failed);
+                    }
+                };
+
+                let psk = match self.session.read().await.get_psk().await {
+                    Some(p) => p,
+                    None => {
+                        error!("PSK not set");
+                        return Err(ReqError::Failed);
+                    }
+                };
+
+                match self.service.connect(&ssid, &psk).await {
+                    Ok(_) => {
+                        debug!("Connection initiated for SSID: {}", ssid);
+                        self.session.write().await.clear_buffers().await;
+                        Ok(())
+                    }
+                    Err(e) => {
+                        error!("Connection failed: {}", e);
+                        Err(ReqError::Failed)
+                    }
+                }
+            }
+            2 => {
+                // Disconnect
+                debug!("Initiating disconnection (via state write)");
+                match self.service.disconnect().await {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        error!("Disconnection failed: {}", e);
+                        Err(ReqError::Failed)
+                    }
+                }
+            }
+            _ => {
+                warn!("Invalid connect state value: {}", value[0]);
+                Err(ReqError::InvalidValueLength)
+            }
+        }
     }
 }
 
