@@ -5,18 +5,13 @@ use bluer::{
     Adapter, AdapterEvent,
 };
 use futures::StreamExt;
-use std::collections::BTreeSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, warn};
 
 use crate::{
     backend::WifiBackend,
-    transport::ble::{
-        gatt::GattServer,
-        session::BleSession,
-        uuids::{AUTHORIZATION_SERVICE_UUID, CONNECT_SERVICE_UUID, SCAN_SERVICE_UUID},
-    },
+    transport::ble::{gatt::GattServer, session::BleSession},
 };
 
 /// BLE transport adapter
@@ -68,16 +63,14 @@ impl<B: WifiBackend> BleAdapter<B> {
         // Register GATT application
         gatt_server.register(&self.adapter).await?;
 
-        // Register LE advertisement so Web Bluetooth clients can discover us
+        // Register LE advertisement so Web Bluetooth clients can discover us.
+        // Only advertise local_name + discoverable; service UUIDs are omitted
+        // because three 128-bit UUIDs exceed the 31-byte LE advertisement limit.
+        // Clients filter by namePrefix, not by service UUID.
         let adv = Advertisement {
             advertisement_type: bluer::adv::Type::Peripheral,
             local_name: Some(self.device_name.clone()),
             discoverable: Some(true),
-            service_uuids: BTreeSet::from([
-                AUTHORIZATION_SERVICE_UUID,
-                SCAN_SERVICE_UUID,
-                CONNECT_SERVICE_UUID,
-            ]),
             ..Default::default()
         };
         self.adv_handle = Some(self.adapter.advertise(adv).await?);
