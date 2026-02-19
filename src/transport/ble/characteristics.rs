@@ -169,10 +169,12 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
                 }
             }
             0 => {
-                // Reset to idle — discard results
+                // Reset to idle — discard results and reset service state
                 debug!("Scan reset to idle");
                 self.scan_result_chunks.write().await.clear();
                 *self.selected_chunk_index.write().await = 0;
+                self.service.reset_scan().await;
+                let _ = self.scan_state_tx.send(0);
                 Ok(())
             }
             _ => {

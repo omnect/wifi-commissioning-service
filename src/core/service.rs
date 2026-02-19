@@ -61,6 +61,11 @@ impl<B: WifiBackend> WifiCommissioningService<B> {
         self.scanner.results().await.ok()
     }
 
+    /// Reset scan state to idle
+    pub async fn reset_scan(&self) {
+        self.scanner.reset().await;
+    }
+
     /// Connect to a WiFi network
     pub async fn connect(&self, ssid: &str, psk: &[u8; 32]) -> ServiceResult<()> {
         self.connector.connect(ssid, psk).await
