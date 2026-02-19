@@ -362,14 +362,22 @@ mod tests {
     use crate::backend::MockWifiBackend;
 
     async fn create_test_handler() -> CharacteristicHandler<MockWifiBackend> {
+        let (handler, _) = create_test_handler_with_backend().await;
+        handler
+    }
+
+    async fn create_test_handler_with_backend() -> (
+        CharacteristicHandler<MockWifiBackend>,
+        Arc<MockWifiBackend>,
+    ) {
         let backend = Arc::new(MockWifiBackend::new());
         let service = Arc::new(WifiCommissioningService::new(
-            backend,
+            backend.clone(),
             "test-secret".to_string(),
         ));
         let session = Arc::new(RwLock::new(BleSession::new()));
 
-        CharacteristicHandler::new(service, session)
+        (CharacteristicHandler::new(service, session), backend)
     }
 
     #[tokio::test]
@@ -605,5 +613,234 @@ mod tests {
 
         let result = handler.handle_connect_state_write(vec![1]).await;
         assert!(matches!(result, Err(ReqError::Failed)));
+    }
+
+    // ── Integration tests ────────────────────────────────────────────
+
+    /// Regression test for 2c0a28b: scan reset must propagate to service
+    /// state machine and watch channel, not just clear local chunks.
+    #[tokio::test]
+    async fn test_scan_lifecycle_reset_and_rescan() {
+        let handler = create_test_handler().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        let mut rx = handler.subscribe_scan_state();
+
+        // First scan
+        handler.handle_scan_status_write(vec![1]).await.unwrap();
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), u8::from(ScanState::Finished));
+
+        // Verify chunks exist
+        let count = handler.handle_scan_select_read().await.unwrap();
+        assert!(count[0] > 0);
+
+        // Reset to idle
+        handler.handle_scan_status_write(vec![0]).await.unwrap();
+
+        // Watch channel must receive idle (0) — this broke before 2c0a28b
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), 0);
+
+        // Service state must read Idle, not stale Finished
+        let state = handler.handle_scan_status_read().await.unwrap();
+        assert_eq!(state, vec![0]);
+
+        // Chunks must be cleared
+        let count = handler.handle_scan_select_read().await.unwrap();
+        assert_eq!(count[0], 0);
+
+        // Second scan must succeed (state machine was reset)
+        handler.handle_scan_status_write(vec![1]).await.unwrap();
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), u8::from(ScanState::Finished));
+
+        let count = handler.handle_scan_select_read().await.unwrap();
+        assert!(count[0] > 0);
+    }
+
+    /// Regression test for 0d1cf70: connection retry must work after a
+    /// failed attempt without getting OperationInProgress.
+    #[tokio::test]
+    async fn test_connect_retry_after_failure() {
+        let (handler, backend) = create_test_handler_with_backend().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        // Configure mock to fail
+        backend.set_connect_failure(true).await;
+
+        handler.handle_ssid_write(b"TestNet".to_vec()).await.unwrap();
+        handler.handle_psk_write(vec![42u8; 32]).await.unwrap();
+
+        let mut rx = handler.subscribe_connect_state();
+
+        // First attempt — fails asynchronously
+        handler
+            .handle_connect_state_write(vec![1])
+            .await
+            .unwrap();
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), u8::from(ConnectionState::Failed));
+
+        // Configure mock to succeed
+        backend.set_connect_failure(false).await;
+
+        // Re-set credentials (buffers cleared after first connect)
+        handler.handle_ssid_write(b"TestNet".to_vec()).await.unwrap();
+        handler.handle_psk_write(vec![42u8; 32]).await.unwrap();
+
+        // Retry — must succeed, not return OperationInProgress
+        handler
+            .handle_connect_state_write(vec![1])
+            .await
+            .unwrap();
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), u8::from(ConnectionState::Connected));
+    }
+
+    /// Full connect lifecycle: connect → verify Connected → disconnect →
+    /// verify Idle.
+    #[tokio::test]
+    async fn test_connect_full_lifecycle() {
+        let handler = create_test_handler().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        handler.handle_ssid_write(b"TestNet".to_vec()).await.unwrap();
+        handler.handle_psk_write(vec![42u8; 32]).await.unwrap();
+
+        let mut rx = handler.subscribe_connect_state();
+
+        // Connect
+        handler
+            .handle_connect_state_write(vec![1])
+            .await
+            .unwrap();
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), u8::from(ConnectionState::Connected));
+
+        // State read confirms Connected
+        let state = handler.handle_connect_state_read().await.unwrap();
+        assert_eq!(state, vec![u8::from(ConnectionState::Connected)]);
+
+        // Disconnect
+        handler
+            .handle_connect_state_write(vec![0])
+            .await
+            .unwrap();
+
+        // State read confirms Idle
+        let state = handler.handle_connect_state_read().await.unwrap();
+        assert_eq!(state, vec![u8::from(ConnectionState::Idle)]);
+    }
+
+    /// Scan error notification propagates through watch channel.
+    #[tokio::test]
+    async fn test_scan_error_notification() {
+        let (handler, backend) = create_test_handler_with_backend().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        backend.set_scan_failure(true).await;
+
+        let mut rx = handler.subscribe_scan_state();
+
+        handler.handle_scan_status_write(vec![1]).await.unwrap();
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), u8::from(ScanState::Error));
+
+        // Reset clears error state
+        handler.handle_scan_status_write(vec![0]).await.unwrap();
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), 0);
+
+        let state = handler.handle_scan_status_read().await.unwrap();
+        assert_eq!(state, vec![0]);
+    }
+
+    // ── SSID boundary tests ──────────────────────────────────────────
+
+    #[tokio::test]
+    async fn test_ssid_write_at_max_length() {
+        use crate::transport::ble::uuids::SSID_MAX_LENGTH;
+
+        let handler = create_test_handler().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        let ssid = vec![b'A'; SSID_MAX_LENGTH];
+        handler.handle_ssid_write(ssid.clone()).await.unwrap();
+
+        let result = handler.handle_ssid_read().await.unwrap();
+        assert_eq!(result, ssid);
+    }
+
+    /// Documents that the handler does NOT enforce SSID_MAX_LENGTH.
+    /// Oversized SSIDs are accepted at the BLE layer; wpa_supplicant
+    /// rejects them later.
+    #[tokio::test]
+    async fn test_ssid_write_exceeds_max_length() {
+        use crate::transport::ble::uuids::SSID_MAX_LENGTH;
+
+        let handler = create_test_handler().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        let ssid = vec![b'A'; SSID_MAX_LENGTH + 1];
+        let result = handler.handle_ssid_write(ssid).await;
+        assert!(result.is_ok());
+    }
+
+    // ── Concurrent operations ────────────────────────────────────────
+
+    /// Scan and connect are independent state machines — both must
+    /// complete successfully when initiated concurrently.
+    #[tokio::test]
+    async fn test_concurrent_scan_and_connect() {
+        let handler = create_test_handler().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        let mut scan_rx = handler.subscribe_scan_state();
+        let mut connect_rx = handler.subscribe_connect_state();
+
+        handler.handle_scan_status_write(vec![1]).await.unwrap();
+
+        handler
+            .handle_ssid_write(b"TestNet".to_vec())
+            .await
+            .unwrap();
+        handler.handle_psk_write(vec![42u8; 32]).await.unwrap();
+        handler
+            .handle_connect_state_write(vec![1])
+            .await
+            .unwrap();
+
+        scan_rx.changed().await.unwrap();
+        assert_eq!(*scan_rx.borrow(), u8::from(ScanState::Finished));
+
+        connect_rx.changed().await.unwrap();
+        assert_eq!(*connect_rx.borrow(), u8::from(ConnectionState::Connected));
+    }
+
+    // ── Authorization guard coverage ─────────────────────────────────
+
+    #[tokio::test]
+    async fn test_unauthorized_connect_write() {
+        let handler = create_test_handler().await;
+
+        let result = handler.handle_connect_state_write(vec![1]).await;
+        assert!(matches!(result, Err(ReqError::NotAuthorized)));
+    }
+
+    #[tokio::test]
+    async fn test_unauthorized_ssid_write() {
+        let handler = create_test_handler().await;
+
+        let result = handler.handle_ssid_write(b"Test".to_vec()).await;
+        assert!(matches!(result, Err(ReqError::NotAuthorized)));
+    }
+
+    #[tokio::test]
+    async fn test_unauthorized_psk_write() {
+        let handler = create_test_handler().await;
+
+        let result = handler.handle_psk_write(vec![42u8; 32]).await;
+        assert!(matches!(result, Err(ReqError::NotAuthorized)));
     }
 }

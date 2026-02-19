@@ -179,4 +179,39 @@ mod tests {
         assert_eq!(status.state, crate::core::types::ConnectionState::Idle);
         assert_eq!(status.ssid, None);
     }
+
+    #[tokio::test]
+    async fn test_scan_results_before_scan() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let service = WifiCommissioningService::new(backend, "test".to_string());
+
+        assert!(service.scan_results().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_reset_scan_during_scanning() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let service = WifiCommissioningService::new(backend, "test".to_string());
+
+        service.start_scan().await.unwrap();
+        assert_eq!(service.scan_state().await, ScanState::Scanning);
+
+        // Reset while background scan task is still running
+        service.reset_scan().await;
+        assert_eq!(service.scan_state().await, ScanState::Idle);
+        assert!(service.scan_results().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_disconnect_while_idle() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let service = WifiCommissioningService::new(backend, "test".to_string());
+
+        // Disconnect without prior connection — must succeed (idempotent)
+        service.disconnect().await.unwrap();
+
+        let status = service.connection_status().await;
+        assert_eq!(status.state, crate::core::types::ConnectionState::Idle);
+        assert_eq!(status.ssid, None);
+    }
 }

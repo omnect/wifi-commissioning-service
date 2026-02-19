@@ -272,4 +272,328 @@ mod tests {
         let body: serde_json::Value = test::read_body_json(resp).await;
         assert_eq!(body["status"], "ok");
     }
+
+    // ── Connect/Disconnect endpoint tests ──────────────────────────────
+
+    #[actix_web::test]
+    async fn test_connect_endpoint() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service) = test_app(backend);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(scan_service.clone()))
+                .app_data(web::Data::new(connect_service.clone()))
+                .configure(configure_routes::<MockWifiBackend>),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/connect")
+            .set_json(ConnectParams {
+                ssid: "TestNet".to_string(),
+                psk: "a".repeat(64),
+            })
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["status"], "ok");
+    }
+
+    #[actix_web::test]
+    async fn test_disconnect_endpoint() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service) = test_app(backend);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(scan_service.clone()))
+                .app_data(web::Data::new(connect_service.clone()))
+                .configure(configure_routes::<MockWifiBackend>),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/disconnect")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["status"], "ok");
+    }
+
+    #[actix_web::test]
+    async fn test_connect_invalid_psk_length() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service) = test_app(backend);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(scan_service.clone()))
+                .app_data(web::Data::new(connect_service.clone()))
+                .configure(configure_routes::<MockWifiBackend>),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/connect")
+            .set_json(ConnectParams {
+                ssid: "TestNet".to_string(),
+                psk: "abc".to_string(),
+            })
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["error"], "invalid_params");
+    }
+
+    #[actix_web::test]
+    async fn test_connect_invalid_psk_hex() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service) = test_app(backend);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(scan_service.clone()))
+                .app_data(web::Data::new(connect_service.clone()))
+                .configure(configure_routes::<MockWifiBackend>),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/connect")
+            .set_json(ConnectParams {
+                ssid: "TestNet".to_string(),
+                psk: "z".repeat(64),
+            })
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["error"], "invalid_params");
+    }
+
+    #[actix_web::test]
+    async fn test_connect_missing_fields() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service) = test_app(backend);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(scan_service.clone()))
+                .app_data(web::Data::new(connect_service.clone()))
+                .configure(configure_routes::<MockWifiBackend>),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/connect")
+            .set_json(serde_json::json!({}))
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // ── Error code mapping tests ───────────────────────────────────────
+
+    #[actix_web::test]
+    async fn test_scan_results_before_scan_returns_conflict() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service) = test_app(backend);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(scan_service.clone()))
+                .app_data(web::Data::new(connect_service.clone()))
+                .configure(configure_routes::<MockWifiBackend>),
+        )
+        .await;
+
+        let req = test::TestRequest::get()
+            .uri("/api/v1/scan/results")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["error"], "invalid_state");
+    }
+
+    #[actix_web::test]
+    async fn test_error_status_code_backend() {
+        use actix_web::ResponseError;
+        use crate::core::error::WifiError;
+
+        let err = ApiError::Service(ServiceError::Backend(
+            WifiError::ScanFailed("test".into()),
+        ));
+        assert_eq!(err.status_code(), StatusCode::BAD_GATEWAY);
+    }
+
+    #[actix_web::test]
+    async fn test_error_status_code_unauthorized() {
+        use actix_web::ResponseError;
+
+        let err = ApiError::Service(ServiceError::Unauthorized);
+        assert_eq!(err.status_code(), StatusCode::UNAUTHORIZED);
+
+        let err = ApiError::Service(ServiceError::InvalidAuthorizationKey);
+        assert_eq!(err.status_code(), StatusCode::UNAUTHORIZED);
+
+        let err = ApiError::Service(ServiceError::AuthorizationExpired);
+        assert_eq!(err.status_code(), StatusCode::UNAUTHORIZED);
+    }
+
+    // ── Cross-transport parity tests ───────────────────────────────────
+
+    #[actix_web::test]
+    async fn test_scan_lifecycle_via_rest() {
+        let backend = Arc::new(MockWifiBackend::new());
+        backend
+            .set_scan_results(vec![WifiNetwork {
+                ssid: "TestNet".to_string(),
+                mac: "aa:bb:cc:dd:ee:ff".to_string(),
+                channel: 6,
+                rssi: -65,
+            }])
+            .await;
+
+        let (scan_service, connect_service) = test_app(backend);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(scan_service.clone()))
+                .app_data(web::Data::new(connect_service.clone()))
+                .configure(configure_routes::<MockWifiBackend>),
+        )
+        .await;
+
+        // First scan
+        let req = test::TestRequest::post().uri("/api/v1/scan").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Get results
+        let req = test::TestRequest::get()
+            .uri("/api/v1/scan/results")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["networks"][0]["ssid"], "TestNet");
+
+        // Second scan (from Finished state)
+        let req = test::TestRequest::post().uri("/api/v1/scan").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        let req = test::TestRequest::get()
+            .uri("/api/v1/scan/results")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[actix_web::test]
+    async fn test_connect_retry_after_failure_via_rest() {
+        let backend = Arc::new(MockWifiBackend::new());
+        backend.set_connect_failure(true).await;
+
+        let scan_service = Arc::new(ScanService::new(backend.clone()));
+        let connect_service = Arc::new(ConnectionService::new(backend.clone()));
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(scan_service.clone()))
+                .app_data(web::Data::new(connect_service.clone()))
+                .configure(configure_routes::<MockWifiBackend>),
+        )
+        .await;
+
+        // First attempt — accepted but fails in background
+        let req = test::TestRequest::post()
+            .uri("/api/v1/connect")
+            .set_json(ConnectParams {
+                ssid: "TestNet".to_string(),
+                psk: "a".repeat(64),
+            })
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Status reflects failure
+        let req = test::TestRequest::get().uri("/api/v1/status").to_request();
+        let resp = test::call_service(&app, req).await;
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["state"], "failed");
+
+        // Clear failure and retry
+        backend.set_connect_failure(false).await;
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/connect")
+            .set_json(ConnectParams {
+                ssid: "TestNet".to_string(),
+                psk: "a".repeat(64),
+            })
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::ACCEPTED);
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        // Status reflects success
+        let req = test::TestRequest::get().uri("/api/v1/status").to_request();
+        let resp = test::call_service(&app, req).await;
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["state"], "connected");
+    }
+
+    #[actix_web::test]
+    async fn test_status_after_connect() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service) = test_app(backend);
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(scan_service.clone()))
+                .app_data(web::Data::new(connect_service.clone()))
+                .configure(configure_routes::<MockWifiBackend>),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/connect")
+            .set_json(ConnectParams {
+                ssid: "TestNet".to_string(),
+                psk: "a".repeat(64),
+            })
+            .to_request();
+        test::call_service(&app, req).await;
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+
+        let req = test::TestRequest::get().uri("/api/v1/status").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["state"], "connected");
+        assert_eq!(body["ssid"], "TestNet");
+        assert!(body["ip_address"].is_string());
+    }
 }
