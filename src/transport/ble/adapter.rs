@@ -1,14 +1,22 @@
 //! BLE adapter management
 
-use bluer::{Adapter, AdapterEvent};
+use bluer::{
+    adv::{Advertisement, AdvertisementHandle},
+    Adapter, AdapterEvent,
+};
 use futures::StreamExt;
+use std::collections::BTreeSet;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, warn};
 
 use crate::{
     backend::WifiBackend,
-    transport::ble::{gatt::GattServer, session::BleSession},
+    transport::ble::{
+        gatt::GattServer,
+        session::BleSession,
+        uuids::{AUTHORIZATION_SERVICE_UUID, CONNECT_SERVICE_UUID, SCAN_SERVICE_UUID},
+    },
 };
 
 /// BLE transport adapter
@@ -16,6 +24,7 @@ pub struct BleAdapter<B: WifiBackend> {
     adapter: Adapter,
     session: Arc<RwLock<BleSession>>,
     gatt_server: Option<Arc<GattServer<B>>>,
+    adv_handle: Option<AdvertisementHandle>,
     device_name: String,
 }
 
@@ -32,6 +41,7 @@ impl<B: WifiBackend> BleAdapter<B> {
             adapter,
             session: Arc::new(RwLock::new(BleSession::new())),
             gatt_server: None,
+            adv_handle: None,
             device_name,
         })
     }
@@ -55,17 +65,27 @@ impl<B: WifiBackend> BleAdapter<B> {
         // Set adapter name
         self.adapter.set_alias(self.device_name.clone()).await?;
 
-        // Set discoverable and pairable
-        self.adapter.set_discoverable(true).await?;
-        self.adapter.set_pairable(true).await?;
-
-        info!(
-            "BLE adapter started and discoverable as '{}'",
-            self.device_name
-        );
-
         // Register GATT application
         gatt_server.register(&self.adapter).await?;
+
+        // Register LE advertisement so Web Bluetooth clients can discover us
+        let adv = Advertisement {
+            advertisement_type: bluer::adv::Type::Peripheral,
+            local_name: Some(self.device_name.clone()),
+            discoverable: Some(true),
+            service_uuids: BTreeSet::from([
+                AUTHORIZATION_SERVICE_UUID,
+                SCAN_SERVICE_UUID,
+                CONNECT_SERVICE_UUID,
+            ]),
+            ..Default::default()
+        };
+        self.adv_handle = Some(self.adapter.advertise(adv).await?);
+
+        info!(
+            "BLE adapter started, advertising as '{}'",
+            self.device_name
+        );
 
         Ok(())
     }
@@ -75,13 +95,13 @@ impl<B: WifiBackend> BleAdapter<B> {
     pub async fn stop(&mut self) -> Result<(), bluer::Error> {
         info!("Stopping BLE adapter");
 
+        // Drop advertisement handle to unregister
+        self.adv_handle.take();
+
         // Unregister GATT application if registered
         if let Some(gatt_server) = &self.gatt_server {
             gatt_server.unregister(&self.adapter).await?;
         }
-
-        // Set adapter not discoverable
-        self.adapter.set_discoverable(false).await?;
 
         info!("BLE adapter stopped");
         Ok(())
