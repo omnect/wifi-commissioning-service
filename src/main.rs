@@ -83,7 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.enable_ble {
         info!("Starting BLE transport");
 
-        match start_ble_transport(service.clone()).await {
+        match start_ble_transport(service.clone(), args.ble_name.clone()).await {
             Ok(handle) => {
                 transport_tasks.spawn(async move {
                     handle
@@ -170,13 +170,14 @@ async fn shutdown_signal() {
 
 async fn start_ble_transport(
     service: Arc<WifiCommissioningService<WifiCtrlBackend>>,
+    ble_name: String,
 ) -> Result<
     tokio::task::JoinHandle<Result<(), bluer::Error>>,
     Box<dyn std::error::Error>,
 > {
     use wifi_commissioning_service::transport::ble::GattServer;
 
-    let mut adapter = BleAdapter::new("WiFi-Setup".to_string()).await?;
+    let mut adapter = BleAdapter::new(ble_name).await?;
     let session = adapter.session();
 
     let gatt_server = Arc::new(GattServer::new(service, session));

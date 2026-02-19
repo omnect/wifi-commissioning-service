@@ -10,6 +10,10 @@ pub struct CliArgs {
     #[arg(short, long, default_value = "wlan0")]
     pub interface: String,
 
+    /// BLE advertised device name
+    #[arg(long, default_value = "omnectWifiConfig")]
+    pub ble_name: String,
+
     /// Secret shared between BLE client and server (device ID)
     #[arg(short = 's', long)]
     pub ble_secret: Option<String>,
