@@ -7,7 +7,7 @@ use tracing::{Instrument, Span, info_span, instrument};
 use crate::{
     backend::WifiBackend,
     core::{
-        error::{ServiceError, ServiceResult},
+        error::ServiceResult,
         types::{ConnectionState, ConnectionStatus},
     },
 };
@@ -31,18 +31,12 @@ impl ConnectionStateMachine {
         }
     }
 
-    /// Start connection attempt
-    fn start_connect(&mut self, ssid: String) -> ServiceResult<()> {
-        match self.state {
-            ConnectionState::Idle | ConnectionState::Failed => {
-                self.state = ConnectionState::Connecting;
-                self.ssid = Some(ssid);
-                self.ip_address = None;
-                self.error = None;
-                Ok(())
-            }
-            _ => Err(ServiceError::OperationInProgress),
-        }
+    /// Start connection attempt (resets any prior state)
+    fn start_connect(&mut self, ssid: String) {
+        self.state = ConnectionState::Connecting;
+        self.ssid = Some(ssid);
+        self.ip_address = None;
+        self.error = None;
     }
 
     /// Mark connection as successful
@@ -98,11 +92,18 @@ impl<B: WifiBackend> ConnectionService<B> {
     /// Connect to a WiFi network
     #[instrument(skip_all, fields(ssid))]
     pub async fn connect(&self, ssid: &str, psk: &[u8; 32]) -> ServiceResult<()> {
-        // Check and update state
+        // Tear down any active connection before starting a new one
+        {
+            let state = self.state_machine.read().await.state();
+            if state == ConnectionState::Connecting || state == ConnectionState::Connected {
+                let _ = self.backend.disconnect().await;
+            }
+        }
+
         self.state_machine
             .write()
             .await
-            .start_connect(ssid.to_string())?;
+            .start_connect(ssid.to_string());
 
         // Perform connection in background using event-based waiting
         let backend = self.backend.clone();
@@ -160,16 +161,22 @@ mod tests {
         assert_eq!(sm.state(), ConnectionState::Idle);
 
         // Start connection
-        sm.start_connect("TestNet".to_string()).unwrap();
+        sm.start_connect("TestNet".to_string());
         assert_eq!(sm.state(), ConnectionState::Connecting);
 
-        // Cannot start another connection while connecting
-        assert!(sm.start_connect("OtherNet".to_string()).is_err());
+        // Can restart from Connecting (replaces previous attempt)
+        sm.start_connect("OtherNet".to_string());
+        assert_eq!(sm.state(), ConnectionState::Connecting);
+        assert_eq!(sm.status().ssid, Some("OtherNet".to_string()));
 
         // Complete connection
         sm.complete_connect("192.168.1.100".to_string());
         assert_eq!(sm.state(), ConnectionState::Connected);
         assert_eq!(sm.status().ip_address, Some("192.168.1.100".to_string()));
+
+        // Can reconnect from Connected
+        sm.start_connect("ThirdNet".to_string());
+        assert_eq!(sm.state(), ConnectionState::Connecting);
 
         // Disconnect
         sm.disconnect();
@@ -180,14 +187,14 @@ mod tests {
     #[tokio::test]
     async fn test_connection_state_machine_failure() {
         let mut sm = ConnectionStateMachine::new();
-        sm.start_connect("TestNet".to_string()).unwrap();
+        sm.start_connect("TestNet".to_string());
         sm.fail_connect("Connection timeout".to_string());
 
         assert_eq!(sm.state(), ConnectionState::Failed);
         assert_eq!(sm.status().ip_address, None);
 
         // Can retry after failure
-        sm.start_connect("TestNet".to_string()).unwrap();
+        sm.start_connect("TestNet".to_string());
         assert_eq!(sm.state(), ConnectionState::Connecting);
     }
 
@@ -244,14 +251,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_connection_service_operation_in_progress() {
+    async fn test_connection_service_reconnect() {
         let backend = Arc::new(MockWifiBackend::new());
         let service = ConnectionService::new(backend);
 
         let psk = [0u8; 32];
         service.connect("TestNet", &psk).await.unwrap();
 
-        // Try to connect again
-        assert!(service.connect("OtherNet", &psk).await.is_err());
+        // Can reconnect while previous attempt is in progress
+        service.connect("OtherNet", &psk).await.unwrap();
+
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        let status = service.status().await;
+        assert_eq!(status.ssid, Some("OtherNet".to_string()));
     }
 }
