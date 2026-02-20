@@ -6,9 +6,16 @@ use bluer::{
     gatt::local::ApplicationHandle,
 };
 use futures::StreamExt;
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
 use tracing::{debug, info, instrument, warn};
+
+/// Pause between dropping and re-registering the advertisement.
+///
+/// BCM43xxx chips (common on RPi) do not automatically resume advertising
+/// after a GATT connection drops. A brief gap lets BlueZ finish unregistering
+/// the previous advertisement before we re-register it.
+const ADVERTISING_RESTART_DELAY: Duration = Duration::from_millis(200);
 
 use crate::{
     backend::WifiBackend,
@@ -96,9 +103,30 @@ impl<B: WifiBackend> BleAdapter<B> {
         Ok(())
     }
 
+    /// Restart BLE advertising after a central disconnects.
+    ///
+    /// BCM43xxx + BlueZ stop broadcasting when a GATT connection is
+    /// established and do not automatically resume after disconnect.
+    /// Dropping and re-registering the handle forces BlueZ to restart.
+    #[instrument(skip_all)]
+    async fn restart_advertising(&mut self) -> Result<(), bluer::Error> {
+        self.adv_handle.take();
+        tokio::time::sleep(ADVERTISING_RESTART_DELAY).await;
+
+        let adv = Advertisement {
+            advertisement_type: bluer::adv::Type::Peripheral,
+            local_name: Some(self.device_name.clone()),
+            discoverable: Some(true),
+            ..Default::default()
+        };
+        self.adv_handle = Some(self.adapter.advertise(adv).await?);
+        info!("Advertising restarted after device disconnect");
+        Ok(())
+    }
+
     /// Run event loop (process BLE events)
     #[instrument(skip_all, fields(device_name = %self.device_name))]
-    pub async fn run_event_loop(&self) -> Result<(), bluer::Error> {
+    pub async fn run_event_loop(mut self) -> Result<(), bluer::Error> {
         let mut events = self.adapter.events().await?;
 
         info!("BLE event loop started");
@@ -110,10 +138,11 @@ impl<B: WifiBackend> BleAdapter<B> {
                 }
                 AdapterEvent::DeviceRemoved(addr) => {
                     debug!("Device removed: {}", addr);
+                    if let Err(e) = self.restart_advertising().await {
+                        warn!("Failed to restart advertising after disconnect: {}", e);
+                    }
                 }
-                AdapterEvent::PropertyChanged(_prop) => {
-                    // Handle property changes if needed
-                }
+                AdapterEvent::PropertyChanged(_prop) => {}
             }
         }
 
