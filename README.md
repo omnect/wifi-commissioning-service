@@ -93,7 +93,7 @@ cargo build --release --features systemd
 
 ### Testing
 
-Run the comprehensive test suite (75 tests):
+Run the comprehensive test suite (97 tests):
 
 ```bash
 cargo test
@@ -115,6 +115,7 @@ wifi-commissioning-service [OPTIONS]
 Options:
   -i, --interface <NAME>       Network interface [default: wlan0]
   -s, --ble-secret <SECRET>    Shared secret for BLE authorization (required for BLE)
+      --ble-name <NAME>        BLE advertised device name [default: omnectWifiConfig]
       --enable-ble             Enable BLE transport [default: true]
       --enable-unix-socket     Enable Unix socket transport [default: false]
       --socket-path <PATH>     Unix socket path [default: /run/wifi-commissioning.sock]
@@ -155,21 +156,20 @@ The service handles shutdown signals gracefully:
 
 ### Services
 
-The BLE interface exposes three GATT services:
+The BLE interface exposes three GATT services. Service UUIDs are from the `d69a37ee-1d8a-4329-bd24-25db4af3c8xx` family; characteristic UUIDs are from the `811ce666-22e0-4a6d-a50f-0c78e076faax` family.
 
 1. **Authorization Service** (`d69a37ee-1d8a-4329-bd24-25db4af3c865`)
-   - Auth Key characteristic: Write-only, accepts SHA3-256 hash of secret
+   - **Auth Key** (`faa6`): Write-only 32-byte SHA3-256 hash of the shared secret
 
 2. **Scan Service** (`d69a37ee-1d8a-4329-bd24-25db4af3c863`)
-   - Control: Write to start scan
-   - State: Read/notify for scan status
-   - Results: Read for paginated scan results (100-byte chunks)
+   - **Scan Status** (`faa0`): Read/write/notify — write `1` to start scanning, write `0` to reset; notifies on state change
+   - **Scan Select** (`faa1`): Read chunk count (u8), write chunk index to select
+   - **Scan Result** (`faa2`): Read — returns the selected 100-byte JSON chunk
 
 3. **Connect Service** (`d69a37ee-1d8a-4329-bd24-25db4af3c864`)
-   - SSID: Write network name
-   - PSK: Write pre-shared key
-   - Control: Write to initiate connection
-   - State: Read/notify for connection status
+   - **Connect SSID** (`faa4`): Read/write — write SSID as UTF-8 (accumulated across writes)
+   - **Connect PSK** (`faa5`): Write-only 32-byte raw PSK
+   - **Connect State** (`faa3`): Read/write/notify — write `1` to connect, write `0` to disconnect; notifies on state change
 
 ### Authorization Flow
 
@@ -322,17 +322,19 @@ See [examples/unix-socket-client/README.md](examples/unix-socket-client/README.m
 
 ### Unit and Integration Tests
 
-The project includes 75 comprehensive tests covering:
+The project includes 97 comprehensive tests covering:
 
 - Authorization service (5 tests)
 - Scanner service (5 tests)
-- Connection service (5 tests)
+- Connection service (6 tests)
+- Core service facade (8 tests)
+- Backend mock (4 tests)
 - wifi-ctrl backend integration (3 tests)
-- BLE characteristics (26 tests - auth, scan, connect, multi-part writes)
+- BLE characteristics (29 tests - auth, scan, connect, multi-part writes)
 - BLE session (6 tests)
-- BLE UUIDs (2 tests)
-- REST API handlers (4 tests)
-- Protocol layer (11 tests - requests, responses, notifications)
+- BLE UUIDs (3 tests)
+- REST API handlers (15 tests)
+- Protocol layer (13 tests - requests, responses, notifications)
 
 Run tests with:
 ```bash

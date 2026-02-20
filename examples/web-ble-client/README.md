@@ -31,21 +31,20 @@ This Web Bluetooth client allows you to commission WiFi credentials to a device 
 
 ## Protocol Overview
 
-The client communicates with three BLE GATT services:
+The client communicates with three BLE GATT services. Service UUIDs use the `d69a37ee-...-c8xx` family; characteristic UUIDs use the `811ce666-22e0-4a6d-a50f-0c78e076faax` family.
 
 ### Authorization Service (`d69a37ee-1d8a-4329-bd24-25db4af3c865`)
-- **Auth Key** (`c866`): Write SHA3-256 hash of device secret for authentication
+- **Auth Key** (`faa6`): Write SHA3-256 hash of device secret for authentication
 
 ### Scan Service (`d69a37ee-1d8a-4329-bd24-25db4af3c863`)
-- **Scan Control** (`c867`): Write `1` to start scanning
-- **Scan State** (`c868`): Read/notify scan status (0=idle, 1=scanning, 2=complete, 3=error)
-- **Scan Results** (`c869`): Read JSON array of discovered networks in 100-byte chunks
+- **Scan Status** (`faa0`): Read/write/notify — write `1` to start scanning, write `0` to reset; notifies on state change (0=idle, 1=scanning, 2=complete, 3=error)
+- **Scan Select** (`faa1`): Read chunk count (u8); write desired chunk index (u8) to select it
+- **Scan Result** (`faa2`): Read — returns the selected 100-byte JSON chunk
 
 ### Connect Service (`d69a37ee-1d8a-4329-bd24-25db4af3c864`)
-- **Connect SSID** (`c86a`): Write SSID as UTF-8 string (accumulated over multiple writes)
-- **Connect PSK** (`c86b`): Write 32-byte PSK derived via PBKDF2
-- **Connect Control** (`c86c`): Write `1` to connect, `2` to disconnect
-- **Connect State** (`c86d`): Read/notify connection status (0=idle, 1=connecting, 2=connected, 3=error)
+- **Connect SSID** (`faa4`): Read/write SSID as UTF-8 string (accumulated over multiple writes)
+- **Connect PSK** (`faa5`): Write-only 32-byte raw PSK derived via PBKDF2
+- **Connect State** (`faa3`): Read/write/notify — write `1` to connect, write `0` to disconnect; notifies on state change (0=idle, 1=connecting, 2=connected, 3=error)
 
 ## Authentication
 
