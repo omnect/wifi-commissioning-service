@@ -62,18 +62,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.enable_unix_socket {
         info!("Starting Unix socket transport on {}", args.socket_path);
 
-        let server = wifi_commissioning_service::transport::unix_socket::server::create(
-            &args.socket_path,
-            service.scanner.clone(),
-            service.connector.clone(),
-            service.net_management.clone(),
-        )?;
-
-        let span = info_span!("unix_socket_transport");
-        transport_tasks.spawn(
-            async move { server.await.map_err(|e| format!("Unix socket server: {e}")) }
-                .instrument(span),
-        );
+        let handle = start_unix_socket_transport(&args.socket_path, service.clone())?;
+        transport_tasks.spawn(async move {
+            handle
+                .await
+                .map_err(|e| format!("Unix socket task panicked: {e}"))?
+        });
     }
 
     // Start BLE transport
@@ -163,6 +157,27 @@ async fn shutdown_signal() {
 async fn shutdown_signal() {
     // On non-Unix platforms, just wait forever
     std::future::pending::<()>().await
+}
+
+fn start_unix_socket_transport(
+    socket_path: &str,
+    service: Arc<WifiCommissioningService<WifiCtrlBackend>>,
+) -> Result<tokio::task::JoinHandle<Result<(), String>>, Box<dyn std::error::Error>> {
+    use wifi_commissioning_service::transport::unix_socket::server;
+
+    let srv = server::create(
+        socket_path,
+        service.scanner.clone(),
+        service.connector.clone(),
+        service.net_management.clone(),
+    )?;
+
+    let span = info_span!("unix_socket_transport");
+    let handle = tokio::spawn(
+        async move { srv.await.map_err(|e| format!("Unix socket server: {e}")) }.instrument(span),
+    );
+
+    Ok(handle)
 }
 
 async fn start_ble_transport(
