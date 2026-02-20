@@ -70,32 +70,42 @@ async function requestDevice() {
 // This function handles the event 'gattserverdisconnected'
 async function onDisconnected() {
   log('> Bluetooth Device disconnected');
-  for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
-    log(`> Reconnecting (attempt ${attempt}/${MAX_RECONNECT_ATTEMPTS})...`);
-    await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAY_MS));
-    try {
-      await connectDeviceAndCacheCharacteristics();
-      log('> Reconnected.');
-      return;
-    } catch (error) {
-      log('> Error: ' + error);
-    }
+  try {
+    await connectDeviceAndCacheCharacteristics();
+    log('> Reconnected.');
+  } catch (error) {
+    log('> Reconnection failed. Please connect manually.');
   }
-  log('> Reconnection failed. Please connect manually.');
 }
 
 
 // This function connects the web browser to the BLE device and
 // gets the Services and their corresponding Characteristics.
 async function connectDeviceAndCacheCharacteristics() {
-  if (bluetoothDevice.gatt.connected && 
+  if (bluetoothDevice.gatt.connected &&
       wifiScannerStateCharacteristic &&
       wifiConfigStateCharacteristic) {
     return;
   }
 
-  log('> Connecting to GATT Server...');
-  const server = await bluetoothDevice.gatt.connect();
+  // Retry gatt.connect() — Chrome/BlueZ may need a moment after a disconnect
+  // before a new connection succeeds. This covers both initial connect after a
+  // page refresh and reconnect after the device drops the link.
+  let server;
+  for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
+    if (attempt > 1) {
+      log(`> Retrying connection (attempt ${attempt}/${MAX_RECONNECT_ATTEMPTS})...`);
+      await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAY_MS));
+    }
+    log('> Connecting to GATT Server...');
+    try {
+      server = await bluetoothDevice.gatt.connect();
+      break;
+    } catch (error) {
+      log('> Error: ' + error);
+      if (attempt === MAX_RECONNECT_ATTEMPTS) throw error;
+    }
+  }
 
   log('> Getting the Wi-Fi Scanner Service...');
   const wifiScannerService = await server.getPrimaryService(SVC_WIFI_SCANNER_UUID);
