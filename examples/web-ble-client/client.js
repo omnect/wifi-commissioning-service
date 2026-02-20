@@ -257,14 +257,23 @@ async function readWiFiScannerResults() {
       log('> Results: ' + JSON.stringify(obj, undefined, 2));
       if (obj.length > 0) {
         obj.sort((a, b) => (Number(a.rssi) < Number(b.rssi)) ? 1 : -1);
+        // Deduplicate by SSID: multiple BSSIDs share an SSID in mesh/multi-AP
+        // networks. After sorting by RSSI, the first entry per SSID is the
+        // strongest; discard the rest.
+        const seen = new Set();
+        const unique = obj.filter(ap => {
+          if (seen.has(ap.ssid)) return false;
+          seen.add(ap.ssid);
+          return true;
+        });
         var x = document.getElementById("selAccessPoint");
         while (x.firstChild) {
           x.removeChild(x.firstChild);
         }
-        for (i = 0; i < obj.length; i++) {
+        for (i = 0; i < unique.length; i++) {
           var option = document.createElement("option");
-          option.text = obj[i].ssid;
-          option.value = obj[i].ssid;
+          option.text = unique[i].ssid;
+          option.value = unique[i].ssid;
           x.add(option);
         }
       }
