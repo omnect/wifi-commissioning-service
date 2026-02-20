@@ -5,8 +5,8 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::{RwLock, watch};
 use tracing::{debug, error, instrument, warn};
 
-/// Interval for polling scan completion state
-const SCAN_POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// Polling interval for scan and connection state transitions
+const STATE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 use crate::{
     backend::WifiBackend,
@@ -156,7 +156,7 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
                                     let _ = tx.send(u8::from(state));
                                     return;
                                 }
-                                tokio::time::sleep(SCAN_POLL_INTERVAL).await;
+                                tokio::time::sleep(STATE_POLL_INTERVAL).await;
                             }
                         });
                         Ok(())
@@ -327,7 +327,7 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
                                     let _ = tx.send(u8::from(status.state));
                                     return;
                                 }
-                                tokio::time::sleep(SCAN_POLL_INTERVAL).await;
+                                tokio::time::sleep(STATE_POLL_INTERVAL).await;
                             }
                         });
                         Ok(())

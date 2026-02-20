@@ -151,6 +151,19 @@ mod tests {
 
     use super::*;
 
+    /// Initialize an actix-web test service with both scan and connect routes.
+    macro_rules! init_test_app {
+        ($scan:expr, $connect:expr) => {
+            test::init_service(
+                App::new()
+                    .app_data(web::Data::new($scan.clone()))
+                    .app_data(web::Data::new($connect.clone()))
+                    .configure(configure_routes::<MockWifiBackend>),
+            )
+            .await
+        };
+    }
+
     fn test_app(
         backend: Arc<MockWifiBackend>,
     ) -> (
@@ -175,13 +188,7 @@ mod tests {
             .await;
 
         let (scan_service, connect_service) = test_app(backend);
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         let req = test::TestRequest::post().uri("/api/v1/scan").to_request();
         let resp = test::call_service(&app, req).await;
@@ -199,13 +206,7 @@ mod tests {
         // Start first scan directly
         scan_service.start_scan().await.unwrap();
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         // Second scan should return 409 Conflict
         let req = test::TestRequest::post().uri("/api/v1/scan").to_request();
@@ -234,13 +235,7 @@ mod tests {
         scan_service.start_scan().await.unwrap();
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         let req = test::TestRequest::get()
             .uri("/api/v1/scan/results")
@@ -257,13 +252,7 @@ mod tests {
         let backend = Arc::new(MockWifiBackend::new());
         let (scan_service, connect_service) = test_app(backend);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         let req = test::TestRequest::get().uri("/api/v1/status").to_request();
         let resp = test::call_service(&app, req).await;
@@ -280,13 +269,7 @@ mod tests {
         let backend = Arc::new(MockWifiBackend::new());
         let (scan_service, connect_service) = test_app(backend);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/connect")
@@ -307,13 +290,7 @@ mod tests {
         let backend = Arc::new(MockWifiBackend::new());
         let (scan_service, connect_service) = test_app(backend);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/disconnect")
@@ -330,13 +307,7 @@ mod tests {
         let backend = Arc::new(MockWifiBackend::new());
         let (scan_service, connect_service) = test_app(backend);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/connect")
@@ -357,13 +328,7 @@ mod tests {
         let backend = Arc::new(MockWifiBackend::new());
         let (scan_service, connect_service) = test_app(backend);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/connect")
@@ -384,13 +349,7 @@ mod tests {
         let backend = Arc::new(MockWifiBackend::new());
         let (scan_service, connect_service) = test_app(backend);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/connect")
@@ -407,13 +366,7 @@ mod tests {
         let backend = Arc::new(MockWifiBackend::new());
         let (scan_service, connect_service) = test_app(backend);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         let req = test::TestRequest::get()
             .uri("/api/v1/scan/results")
@@ -464,13 +417,7 @@ mod tests {
 
         let (scan_service, connect_service) = test_app(backend);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         // First scan
         let req = test::TestRequest::post().uri("/api/v1/scan").to_request();
@@ -511,13 +458,7 @@ mod tests {
         let scan_service = Arc::new(ScanService::new(backend.clone()));
         let connect_service = Arc::new(ConnectionService::new(backend.clone()));
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         // First attempt — accepted but fails in background
         let req = test::TestRequest::post()
@@ -565,13 +506,7 @@ mod tests {
         let backend = Arc::new(MockWifiBackend::new());
         let (scan_service, connect_service) = test_app(backend);
 
-        let app = test::init_service(
-            App::new()
-                .app_data(web::Data::new(scan_service.clone()))
-                .app_data(web::Data::new(connect_service.clone()))
-                .configure(configure_routes::<MockWifiBackend>),
-        )
-        .await;
+        let app = init_test_app!(scan_service, connect_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/connect")
