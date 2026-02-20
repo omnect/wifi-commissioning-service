@@ -144,6 +144,11 @@ impl WifiBackend for WifiCtrlBackend {
 
         let mut networks = Vec::new();
         for res in results.iter() {
+            // Hidden networks broadcast a null-padded SSID. They cannot be
+            // commissioned by name, so exclude them from results.
+            if res.name.is_empty() || res.name.bytes().all(|b| b == 0) {
+                continue;
+            }
             networks.push(WifiNetwork {
                 ssid: res.name.clone(),
                 mac: res.mac.clone(),
