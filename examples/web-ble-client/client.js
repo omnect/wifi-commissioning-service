@@ -34,6 +34,13 @@ const WIFI_CONFIG_STATE_CONNECT   = 1;
 const WIFI_CONFIG_STATE_JOINED    = 2;
 const WIFI_CONFIG_STATE_ERROR     = 3;
 
+// Reconnect configuration.
+// The RPi BCM43xxx chip shares its RF path between WiFi and Bluetooth.
+// A WiFi scan disrupts the BLE connection; retrying immediately fails
+// because the scan is still running or the radio hasn't settled yet.
+const RECONNECT_DELAY_MS = 3000;
+const MAX_RECONNECT_ATTEMPTS = 3;
+
 // Global Variables
 var bleSecret = 'some-secret';
 var bluetoothDevice;
@@ -63,11 +70,18 @@ async function requestDevice() {
 // This function handles the event 'gattserverdisconnected'
 async function onDisconnected() {
   log('> Bluetooth Device disconnected');
-  try {
-    await connectDeviceAndCacheCharacteristics()
-  } catch (error) {
-    log('> Error: ' + error);
+  for (let attempt = 1; attempt <= MAX_RECONNECT_ATTEMPTS; attempt++) {
+    log(`> Reconnecting (attempt ${attempt}/${MAX_RECONNECT_ATTEMPTS})...`);
+    await new Promise(resolve => setTimeout(resolve, RECONNECT_DELAY_MS));
+    try {
+      await connectDeviceAndCacheCharacteristics();
+      log('> Reconnected.');
+      return;
+    } catch (error) {
+      log('> Error: ' + error);
+    }
   }
+  log('> Reconnection failed. Please connect manually.');
 }
 
 
