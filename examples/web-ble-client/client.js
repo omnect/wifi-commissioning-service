@@ -114,6 +114,7 @@ async function connectDeviceAndCacheCharacteristics() {
 		return parseInt(value, 16)
   }))
   await wifiAuthKeyCharacteristic.writeValue(hash_ab);
+  document.querySelector('#btnStatus').disabled = false;
 }
 
 
@@ -266,6 +267,52 @@ async function joinedEventHandler() {
   log('> Connected to AP.');
   log('> Stop Wi-Fi Config State Notifications...');
   await wifiConfigStateCharacteristic.stopNotifications();
+  document.querySelector('#btnDisconnect').disabled = false;
+}
+
+
+// This function handles the click event of the button 'Disconnect'.
+async function onDisconnectButtonClick() {
+  try {
+    if (!bluetoothDevice) {
+      await requestDevice();
+    }
+    await connectDeviceAndCacheCharacteristics();
+
+    log('> Disconnecting from AP...');
+    var wifiConfigState = Uint8Array.of(WIFI_CONFIG_STATE_IDLE);
+    await wifiConfigStateCharacteristic.writeValue(wifiConfigState);
+    document.querySelector('#btnDisconnect').disabled = true;
+  } catch (error) {
+    log('> Error: ' + error);
+  }
+}
+
+
+// This function handles the click event of the button 'Get Status'.
+// Note: IP address is not exposed over BLE; only state and SSID are available.
+async function onStatusButtonClick() {
+  try {
+    if (!bluetoothDevice) {
+      await requestDevice();
+    }
+    await connectDeviceAndCacheCharacteristics();
+
+    log('> Reading connection status...');
+
+    const stateValue = await wifiConfigStateCharacteristic.readValue();
+    const state = stateValue.getUint8(0);
+    const stateLabels = ['idle', 'connecting', 'connected', 'error'];
+    log('> State: ' + (stateLabels[state] ?? state));
+
+    const ssidValue = await wifiConfigSSIDCharacteristic.readValue();
+    const ssid = new TextDecoder('utf-8').decode(new Uint8Array(ssidValue.buffer));
+    if (ssid.length > 0) {
+      log('> SSID: ' + ssid);
+    }
+  } catch (error) {
+    log('> Error: ' + error);
+  }
 }
 
 
@@ -303,6 +350,8 @@ function onResetButtonClick() {
   document.querySelector('#btnScan').disabled = true;
   document.querySelector('#btnReset').disabled = true;
   document.querySelector('#btnSend').disabled = true;
+  document.querySelector('#btnStatus').disabled = true;
+  document.querySelector('#btnDisconnect').disabled = true;
   document.querySelector('#selAccessPoint').disabled = true;
   document.querySelector('#txtPassword').disabled = true;
 

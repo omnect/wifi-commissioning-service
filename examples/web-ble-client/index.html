@@ -100,7 +100,17 @@ Apache License, Version 2.0
         <td>
           <button id="btnSend" class="buttons" disabled>Send Access Point to device and connect</button>
         </td>
-      </tr>      
+      </tr>
+      <tr>
+        <td>
+          <button id="btnStatus" class="buttons" disabled>Get Connection Status</button>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <button id="btnDisconnect" class="buttons" disabled>Disconnect</button>
+        </td>
+      </tr>
       <tr>
         <td>
           <button id="btnReset" class="buttons" disabled>Reset Bluetooth Device</button>
@@ -180,6 +190,18 @@ Apache License, Version 2.0
     document.querySelector('#btnSend').addEventListener('click', function() {
       if (isWebBluetoothEnabled()) {
         onSendButtonClick();
+      }
+    });
+
+    document.querySelector('#btnStatus').addEventListener('click', function() {
+      if (isWebBluetoothEnabled()) {
+        onStatusButtonClick();
+      }
+    });
+
+    document.querySelector('#btnDisconnect').addEventListener('click', function() {
+      if (isWebBluetoothEnabled()) {
+        onDisconnectButtonClick();
       }
     });
 
