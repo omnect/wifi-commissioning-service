@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::core::types::{ConnectionState, ConnectionStatus, ScanState, WifiNetwork};
+use crate::core::types::{ConnectionState, ConnectionStatus, SavedNetwork, ScanState, WifiNetwork};
 
 /// Response messages from server to client
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -59,6 +59,19 @@ pub struct StatusResponse {
     pub connection: ConnectionStatus,
 }
 
+/// Response for list saved networks request
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SavedNetworksResponse {
+    pub status: String,
+    pub networks: Vec<SavedNetwork>,
+}
+
+/// Response for forget network request
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ForgetNetworkResponse {
+    pub status: String,
+}
+
 impl ScanStartedResponse {
     pub fn ok(state: ScanState) -> Self {
         Self {
@@ -99,6 +112,23 @@ impl StatusResponse {
         Self {
             status: "ok".to_string(),
             connection,
+        }
+    }
+}
+
+impl SavedNetworksResponse {
+    pub fn ok(networks: Vec<SavedNetwork>) -> Self {
+        Self {
+            status: "ok".to_string(),
+            networks,
+        }
+    }
+}
+
+impl ForgetNetworkResponse {
+    pub fn ok() -> Self {
+        Self {
+            status: "ok".to_string(),
         }
     }
 }

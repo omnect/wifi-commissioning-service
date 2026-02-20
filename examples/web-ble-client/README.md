@@ -46,6 +46,13 @@ The client communicates with three BLE GATT services. Service UUIDs use the `d69
 - **Connect PSK** (`faa5`): Write-only 32-byte raw PSK derived via PBKDF2
 - **Connect State** (`faa3`): Read/write/notify — write `1` to connect, write `0` to disconnect; notifies on state change (0=idle, 1=connecting, 2=connected, 3=error)
 
+### Network Management Service (`d69a37ee-1d8a-4329-bd24-25db4af3c866`)
+
+- **Net List Status** (`faa7`): Read/write/notify — write `1` to trigger refresh; poll or wait for notify until state becomes `2` (finished) or `3` (error); write `0` to reset to idle. States: 0=idle, 1=loading, 2=finished, 3=error
+- **Net List Select** (`faa8`): Read chunk count (u8); write desired chunk index (u8) to select it
+- **Net List Result** (`faa9`): Read — returns the selected 100-byte JSON chunk. Reassemble all chunks to get the full `[{"ssid":"...","flags":"..."},...]` JSON array
+- **Net Forget** (`faaa`): Write-only — write a UTF-8-encoded SSID to remove that network from the saved configuration (idempotent; no error if not found)
+
 ## Authentication
 
 The client derives the authentication key using SHA3-256:

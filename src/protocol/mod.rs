@@ -6,9 +6,9 @@ pub mod response;
 
 pub use {
     notification::{ConnectionStateChangedParams, Notification, ScanStateChangedParams},
-    request::ConnectParams,
+    request::{ConnectParams, ForgetNetworkParams},
     response::{
-        ConnectResponse, DisconnectResponse, Response, ScanResultsResponse, ScanStartedResponse,
-        StatusResponse,
+        ConnectResponse, DisconnectResponse, ForgetNetworkResponse, Response,
+        SavedNetworksResponse, ScanResultsResponse, ScanStartedResponse, StatusResponse,
     },
 };

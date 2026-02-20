@@ -22,6 +22,19 @@ const CHR_WIFI_CONFIG_PASSWORD_UUID     = '811ce666-22e0-4a6d-a50f-0c78e076faa5'
 const SVC_WIFI_AUTH_UUID                = 'd69a37ee-1d8a-4329-bd24-25db4af3c865';
 const CHR_WIFI_AUTH_KEY_UUID            = '811ce666-22e0-4a6d-a50f-0c78e076faa6';
 
+// Network Management Service BLE GATT Services And Characteristic UUIDs
+const SVC_NET_MGMT_UUID                 = 'd69a37ee-1d8a-4329-bd24-25db4af3c866';
+const CHR_NET_LIST_STATUS_UUID          = '811ce666-22e0-4a6d-a50f-0c78e076faa7';
+const CHR_NET_LIST_SELECT_UUID          = '811ce666-22e0-4a6d-a50f-0c78e076faa8';
+const CHR_NET_LIST_RESULT_UUID          = '811ce666-22e0-4a6d-a50f-0c78e076faa9';
+const CHR_NET_FORGET_UUID               = '811ce666-22e0-4a6d-a50f-0c78e076faaa';
+
+// Network Management State Machine States
+const NET_LIST_STATE_IDLE     = 0;
+const NET_LIST_STATE_LOADING  = 1;
+const NET_LIST_STATE_FINISHED = 2;
+const NET_LIST_STATE_ERROR    = 3;
+
 // Wi-Fi Scanner State Machine States
 const WIFI_SCANNER_STATE_IDLE     = 0;
 const WIFI_SCANNER_STATE_SCAN     = 1;
@@ -51,6 +64,10 @@ var wifiConfigStateCharacteristic;
 var wifiConfigSSIDCharacteristic;
 var wifiConfigPskCharacteristic;
 var wifiAuthKeyCharacteristic;
+var netListStatusCharacteristic;
+var netListSelectCharacteristic;
+var netListResultCharacteristic;
+var netForgetCharacteristic;
 var accessPointsObj = [];
 
 
@@ -61,7 +78,7 @@ async function requestDevice() {
   bleSecret = document.querySelector('#txtSecret').value;
   bluetoothDevice = await navigator.bluetooth.requestDevice({
       filters: [{namePrefix: 'omnectWifiConfig'}],
-      optionalServices: [SVC_WIFI_SCANNER_UUID, SVC_WIFI_CONFIG_UUID, SVC_WIFI_AUTH_UUID]
+      optionalServices: [SVC_WIFI_SCANNER_UUID, SVC_WIFI_CONFIG_UUID, SVC_WIFI_AUTH_UUID, SVC_NET_MGMT_UUID]
       });
   bluetoothDevice.addEventListener('gattserverdisconnected', onDisconnected);
 }
@@ -138,7 +155,20 @@ async function connectDeviceAndCacheCharacteristics() {
 		return parseInt(value, 16)
   }))
   await wifiAuthKeyCharacteristic.writeValue(hash_ab);
+
+  log('> Getting the Network Management Service...');
+  const netMgmtService = await server.getPrimaryService(SVC_NET_MGMT_UUID);
+
+  log('> Getting the Network Management Characteristics...');
+  netListStatusCharacteristic = await netMgmtService.getCharacteristic(CHR_NET_LIST_STATUS_UUID);
+  netListStatusCharacteristic.addEventListener('characteristicvaluechanged',
+      handleNetListStateChanged);
+  netListSelectCharacteristic = await netMgmtService.getCharacteristic(CHR_NET_LIST_SELECT_UUID);
+  netListResultCharacteristic = await netMgmtService.getCharacteristic(CHR_NET_LIST_RESULT_UUID);
+  netForgetCharacteristic = await netMgmtService.getCharacteristic(CHR_NET_FORGET_UUID);
+
   document.querySelector('#btnStatus').disabled = false;
+  document.querySelector('#btnListSaved').disabled = false;
 }
 
 
@@ -296,6 +326,134 @@ async function readWiFiScannerResults() {
   }
 }
 
+// This function will be called when the net-list-status characteristic notifies.
+function handleNetListStateChanged(event) {
+  let state = event.target.value.getUint8(0);
+  log('> Net List State is ' + state);
+}
+
+
+// This function triggers a refresh of the saved-network list, waits for the
+// notify to signal completion, reads all chunks, and renders the result.
+async function listSavedNetworks() {
+  try {
+    if (!bluetoothDevice) {
+      await requestDevice();
+    }
+    await connectDeviceAndCacheCharacteristics();
+
+    document.querySelector('#btnListSaved').disabled = true;
+    document.querySelector('#savedNetworksList').innerHTML = '';
+
+    log('> Starting Net List Status Notifications...');
+    await netListStatusCharacteristic.startNotifications();
+
+    // Write 1 (Loading) to trigger a refresh on the device
+    await netListStatusCharacteristic.writeValue(Uint8Array.of(NET_LIST_STATE_LOADING));
+
+    // Poll until the device signals Finished or Error
+    let state = NET_LIST_STATE_LOADING;
+    while (state === NET_LIST_STATE_LOADING) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      const v = await netListStatusCharacteristic.readValue();
+      state = v.getUint8(0);
+    }
+
+    await netListStatusCharacteristic.stopNotifications();
+
+    if (state !== NET_LIST_STATE_FINISHED) {
+      log('> Net list refresh failed (state=' + state + ')');
+      document.querySelector('#btnListSaved').disabled = false;
+      return;
+    }
+
+    log('> Reading saved network list...');
+    const countValue = await netListSelectCharacteristic.readValue();
+    const chunkCount = countValue.getUint8(0);
+    console.log(`Saved network chunk count: ${chunkCount}`);
+
+    const enc = new TextDecoder('utf-8');
+    let json = '';
+    for (let i = 0; i < chunkCount; i++) {
+      await netListSelectCharacteristic.writeValue(Uint8Array.of(i));
+      const chunk = await netListResultCharacteristic.readValue();
+      json += enc.decode(new Uint8Array(chunk.buffer));
+    }
+
+    log('> Saved networks raw: ' + json);
+
+    try {
+      const networks = JSON.parse(json);
+      renderSavedNetworks(networks);
+    } catch (e) {
+      log('> Error parsing saved networks: ' + e.message);
+    }
+
+    // Reset the characteristic back to idle
+    await netListStatusCharacteristic.writeValue(Uint8Array.of(NET_LIST_STATE_IDLE));
+
+    document.querySelector('#btnListSaved').disabled = false;
+  } catch (error) {
+    log('> Error: ' + error);
+    document.querySelector('#btnListSaved').disabled = false;
+  }
+}
+
+
+// This function renders the list of saved networks in the UI.
+function renderSavedNetworks(networks) {
+  const list = document.querySelector('#savedNetworksList');
+  list.innerHTML = '';
+  if (!networks || networks.length === 0) {
+    list.innerHTML = '<li><em>No saved networks</em></li>';
+    return;
+  }
+  networks.forEach(function(net) {
+    const li = document.createElement('li');
+    const label = net.flags ? net.ssid + ' ' + net.flags : net.ssid;
+    li.textContent = label + ' ';
+    const btn = document.createElement('button');
+    btn.textContent = 'Forget';
+    btn.onclick = function() { onForgetButtonClick(net.ssid); };
+    li.appendChild(btn);
+    list.appendChild(li);
+  });
+}
+
+
+// This function forgets a saved network by SSID.
+async function forgetNetwork(ssid) {
+  try {
+    if (!bluetoothDevice) {
+      await requestDevice();
+    }
+    await connectDeviceAndCacheCharacteristics();
+
+    log('> Forgetting network: ' + ssid);
+    const enc = new TextEncoder();
+    await netForgetCharacteristic.writeValue(enc.encode(ssid));
+    log('> Network forgotten: ' + ssid);
+
+    // Refresh the saved list to reflect the removal
+    await listSavedNetworks();
+  } catch (error) {
+    log('> Error: ' + error);
+  }
+}
+
+
+// This function handles the click event of a 'Forget' button next to a saved network.
+async function onForgetButtonClick(ssid) {
+  await forgetNetwork(ssid);
+}
+
+
+// This function handles the click event of the 'List Saved Networks' button.
+async function onListSavedButtonClick() {
+  await listSavedNetworks();
+}
+
+
 async function joinedEventHandler() {
   log('> Connected to AP.');
   log('> Stop Wi-Fi Config State Notifications...');
@@ -395,6 +553,15 @@ function onResetButtonClick() {
         handleWiFiScannerStateChanged);
         wifiScannerStateCharacteristic = null;
   }
+  if (netListStatusCharacteristic) {
+    netListStatusCharacteristic.removeEventListener('characteristicvaluechanged',
+        handleNetListStateChanged);
+    netListStatusCharacteristic = null;
+  }
+  netListSelectCharacteristic = null;
+  netListResultCharacteristic = null;
+  netForgetCharacteristic = null;
+  document.querySelector('#savedNetworksList').innerHTML = '';
   // Note that it doesn't disconnect device.
   bluetoothDevice = null;
   log('> Bluetooth Device reset');

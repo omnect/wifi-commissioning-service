@@ -24,6 +24,8 @@ Commands:
     connect <ssid> <psk>    Connect to WiFi network (PSK = 64 hex chars)
     disconnect              Disconnect from WiFi
     status                  Get connection status
+    list-saved              List saved networks from wpa_supplicant config
+    forget <ssid>           Remove a saved network by SSID
 
 Environment:
     WIFI_SOCKET_PATH    Path to Unix socket (default: /var/run/wifi-commissioning.sock)
@@ -34,6 +36,8 @@ Examples:
     $0 connect "MyNetwork" "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     $0 disconnect
     $0 status
+    $0 list-saved
+    $0 forget "MyNetwork"
 EOF
     exit 1
 }
@@ -176,6 +180,44 @@ cmd_status() {
     fi
 }
 
+# List saved networks from wpa_supplicant config
+cmd_list_saved() {
+    echo -e "${GREEN}Fetching saved networks...${NC}"
+    check_socket
+    response=$(api_request GET "/networks")
+
+    networks=$(echo "$response" | jq -r '.networks[]? | "\(.ssid)\t\(.flags)"' 2>/dev/null)
+
+    if [ -n "$networks" ]; then
+        echo -e "${GREEN}Saved networks:${NC}"
+        echo ""
+        printf "%-32s %s\n" "SSID" "Flags"
+        printf "%-32s %s\n" "----" "-----"
+        echo "$networks" | while IFS=$'\t' read -r ssid flags; do
+            printf "%-32s %s\n" "$ssid" "$flags"
+        done
+    else
+        echo -e "${YELLOW}No saved networks found.${NC}"
+    fi
+}
+
+# Remove a saved network by SSID
+cmd_forget() {
+    local ssid="$1"
+
+    if [ -z "$ssid" ]; then
+        echo -e "${RED}Usage: $0 forget <ssid>${NC}" >&2
+        exit 1
+    fi
+
+    echo -e "${GREEN}Forgetting network '$ssid'...${NC}"
+    check_socket
+
+    body=$(jq -n --arg ssid "$ssid" '{ssid: $ssid}')
+    api_request POST "/networks/forget" "$body" >/dev/null
+    echo -e "${GREEN}Network '$ssid' removed from saved config${NC}"
+}
+
 # Main command dispatcher
 case "${1:-}" in
     scan)
@@ -192,6 +234,12 @@ case "${1:-}" in
         ;;
     status)
         cmd_status
+        ;;
+    list-saved)
+        cmd_list_saved
+        ;;
+    forget)
+        cmd_forget "$2"
         ;;
     -h|--help|help|"")
         usage

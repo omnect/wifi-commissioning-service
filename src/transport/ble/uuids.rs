@@ -56,6 +56,33 @@ pub const CONNECT_PSK_CHAR_UUID: Uuid = Uuid::from_bytes([
     0x81, 0x1c, 0xe6, 0x66, 0x22, 0xe0, 0x4a, 0x6d, 0xa5, 0x0f, 0x0c, 0x78, 0xe0, 0x76, 0xfa, 0xa5,
 ]);
 
+// ── Network management service UUIDs ────────────────────────────────────────
+
+/// Network management service UUID
+pub const NET_MGMT_SERVICE_UUID: Uuid = Uuid::from_bytes([
+    0xd6, 0x9a, 0x37, 0xee, 0x1d, 0x8a, 0x43, 0x29, 0xbd, 0x24, 0x25, 0xdb, 0x4a, 0xf3, 0xc8, 0x66,
+]);
+
+/// Saved-network list status characteristic — read/write/notify (state machine)
+pub const NET_LIST_STATUS_CHAR_UUID: Uuid = Uuid::from_bytes([
+    0x81, 0x1c, 0xe6, 0x66, 0x22, 0xe0, 0x4a, 0x6d, 0xa5, 0x0f, 0x0c, 0x78, 0xe0, 0x76, 0xfa, 0xa7,
+]);
+
+/// Saved-network list select characteristic — read chunk count, write index
+pub const NET_LIST_SELECT_CHAR_UUID: Uuid = Uuid::from_bytes([
+    0x81, 0x1c, 0xe6, 0x66, 0x22, 0xe0, 0x4a, 0x6d, 0xa5, 0x0f, 0x0c, 0x78, 0xe0, 0x76, 0xfa, 0xa8,
+]);
+
+/// Saved-network list result characteristic — read selected 100-byte chunk
+pub const NET_LIST_RESULT_CHAR_UUID: Uuid = Uuid::from_bytes([
+    0x81, 0x1c, 0xe6, 0x66, 0x22, 0xe0, 0x4a, 0x6d, 0xa5, 0x0f, 0x0c, 0x78, 0xe0, 0x76, 0xfa, 0xa9,
+]);
+
+/// Forget network characteristic — write SSID bytes to remove the saved network
+pub const NET_FORGET_CHAR_UUID: Uuid = Uuid::from_bytes([
+    0x81, 0x1c, 0xe6, 0x66, 0x22, 0xe0, 0x4a, 0x6d, 0xa5, 0x0f, 0x0c, 0x78, 0xe0, 0x76, 0xfa, 0xaa,
+]);
+
 /// Maximum chunk size for scan result reads
 pub const SCAN_RESULT_CHUNK_SIZE: usize = 100;
 
@@ -82,6 +109,10 @@ mod tests {
         assert_eq!(
             CONNECT_SERVICE_UUID.to_string(),
             "d69a37ee-1d8a-4329-bd24-25db4af3c864"
+        );
+        assert_eq!(
+            NET_MGMT_SERVICE_UUID.to_string(),
+            "d69a37ee-1d8a-4329-bd24-25db4af3c866"
         );
     }
 
@@ -127,6 +158,10 @@ mod tests {
             CONNECT_STATE_CHAR_UUID,
             CONNECT_SSID_CHAR_UUID,
             CONNECT_PSK_CHAR_UUID,
+            NET_LIST_STATUS_CHAR_UUID,
+            NET_LIST_SELECT_CHAR_UUID,
+            NET_LIST_RESULT_CHAR_UUID,
+            NET_FORGET_CHAR_UUID,
         ];
 
         for (i, uuid1) in uuids.iter().enumerate() {

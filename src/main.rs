@@ -66,6 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             &args.socket_path,
             service.scanner.clone(),
             service.connector.clone(),
+            service.net_management.clone(),
         )?;
 
         let span = info_span!("unix_socket_transport");

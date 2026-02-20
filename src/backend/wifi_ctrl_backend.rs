@@ -9,7 +9,7 @@ use crate::{
     backend::WifiBackend,
     core::{
         error::{WifiError, WifiResult},
-        types::{ConnectionState, ConnectionStatus, WifiNetwork},
+        types::{ConnectionState, ConnectionStatus, SavedNetwork, WifiNetwork},
     },
 };
 
@@ -107,6 +107,26 @@ impl WifiCtrlBackend {
             5825 => 165,
             _ => 0,
         }
+    }
+
+    /// Parse `LIST_NETWORKS` wpa_supplicant output into (network_id, SavedNetwork) pairs.
+    ///
+    /// Output format (tab-separated, header on first line):
+    ///   network id / ssid / bssid / flags
+    ///   0\tMySSID\tany\t[CURRENT]
+    fn parse_list_networks(output: &str) -> Vec<(u32, SavedNetwork)> {
+        output
+            .lines()
+            .skip(1) // skip header
+            .filter_map(|line| {
+                let mut parts = line.splitn(4, '\t');
+                let id: u32 = parts.next()?.trim().parse().ok()?;
+                let ssid = parts.next()?.to_string();
+                let _bssid = parts.next(); // ignored
+                let flags = parts.next().unwrap_or("").trim().to_string();
+                Some((id, SavedNetwork { ssid, flags }))
+            })
+            .collect()
     }
 
     /// Get IP address using ip command
@@ -291,6 +311,61 @@ impl WifiBackend for WifiCtrlBackend {
     }
 
     #[instrument(skip_all, fields(interface = %self.interface))]
+    async fn list_networks(&self) -> WifiResult<Vec<SavedNetwork>> {
+        let output = self
+            .client
+            .send_custom("LIST_NETWORKS".to_string())
+            .await
+            .map_err(|e| WifiError::WpaSupplicantError(format!("LIST_NETWORKS failed: {}", e)))?;
+
+        let networks: Vec<SavedNetwork> = Self::parse_list_networks(&output)
+            .into_iter()
+            .map(|(_, n)| n)
+            .collect();
+        debug!("Listed {} saved networks", networks.len());
+        Ok(networks)
+    }
+
+    #[instrument(skip_all, fields(interface = %self.interface, ssid))]
+    async fn remove_network(&self, ssid: &str) -> WifiResult<()> {
+        let output = self
+            .client
+            .send_custom("LIST_NETWORKS".to_string())
+            .await
+            .map_err(|e| WifiError::WpaSupplicantError(format!("LIST_NETWORKS failed: {}", e)))?;
+
+        let ids: Vec<u32> = Self::parse_list_networks(&output)
+            .into_iter()
+            .filter(|(_, n)| n.ssid == ssid)
+            .map(|(id, _)| id)
+            .collect();
+
+        if ids.is_empty() {
+            debug!(
+                "No saved network found for SSID '{}', nothing to remove",
+                ssid
+            );
+            return Ok(());
+        }
+
+        for id in &ids {
+            self.client
+                .send_custom(format!("REMOVE_NETWORK {id}"))
+                .await
+                .map_err(|e| {
+                    WifiError::WpaSupplicantError(format!("REMOVE_NETWORK {id} failed: {}", e))
+                })?;
+        }
+
+        self.client.save_config().await.map_err(|e| {
+            WifiError::WpaSupplicantError(format!("SAVE_CONFIG after remove failed: {}", e))
+        })?;
+
+        debug!("Removed {} network entry(s) for SSID '{}'", ids.len(), ssid);
+        Ok(())
+    }
+
+    #[instrument(skip_all, fields(interface = %self.interface))]
     async fn status(&self) -> WifiResult<ConnectionStatus> {
         let status =
             self.client.get_status().await.map_err(|e| {
@@ -361,5 +436,75 @@ mod tests {
         assert_eq!(WifiCtrlBackend::frequency_to_channel("9999"), 0);
         assert_eq!(WifiCtrlBackend::frequency_to_channel("invalid"), 0);
         assert_eq!(WifiCtrlBackend::frequency_to_channel(""), 0);
+    }
+
+    #[test]
+    fn test_parse_list_networks_empty() {
+        let output = "network id / ssid / bssid / flags\n";
+        let result = WifiCtrlBackend::parse_list_networks(output);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_list_networks_header_only() {
+        let output = "network id / ssid / bssid / flags";
+        let result = WifiCtrlBackend::parse_list_networks(output);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_list_networks_single_entry() {
+        let output = "network id / ssid / bssid / flags\n0\tMyNetwork\tany\t[CURRENT]";
+        let result = WifiCtrlBackend::parse_list_networks(output);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].0, 0);
+        assert_eq!(result[0].1.ssid, "MyNetwork");
+        assert_eq!(result[0].1.flags, "[CURRENT]");
+    }
+
+    #[test]
+    fn test_parse_list_networks_multiple_entries() {
+        let output = "network id / ssid / bssid / flags\n0\tHome\tany\t[CURRENT]\n1\tOffice\tany\t\n2\tGuest\tany\t[DISABLED]";
+        let result = WifiCtrlBackend::parse_list_networks(output);
+        assert_eq!(result.len(), 3);
+        assert_eq!(
+            result[0],
+            (
+                0,
+                SavedNetwork {
+                    ssid: "Home".into(),
+                    flags: "[CURRENT]".into()
+                }
+            )
+        );
+        assert_eq!(
+            result[1],
+            (
+                1,
+                SavedNetwork {
+                    ssid: "Office".into(),
+                    flags: "".into()
+                }
+            )
+        );
+        assert_eq!(
+            result[2],
+            (
+                2,
+                SavedNetwork {
+                    ssid: "Guest".into(),
+                    flags: "[DISABLED]".into()
+                }
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_list_networks_missing_flags_column() {
+        // wpa_supplicant may omit the flags column for networks with no flags
+        let output = "network id / ssid / bssid / flags\n0\tMyNet\tany";
+        let result = WifiCtrlBackend::parse_list_networks(output);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].1.flags, "");
     }
 }

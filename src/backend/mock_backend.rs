@@ -7,7 +7,7 @@ use crate::{
     backend::WifiBackend,
     core::{
         error::{WifiError, WifiResult},
-        types::{ConnectionState, ConnectionStatus, WifiNetwork},
+        types::{ConnectionState, ConnectionStatus, SavedNetwork, WifiNetwork},
     },
 };
 
@@ -15,6 +15,7 @@ use crate::{
 #[derive(Debug, Clone)]
 struct MockState {
     scan_results: Vec<WifiNetwork>,
+    saved_networks: Vec<SavedNetwork>,
     should_fail_scan: bool,
     should_fail_connect: bool,
     connected_ssid: Option<String>,
@@ -36,6 +37,7 @@ impl MockWifiBackend {
         Self {
             inner: Arc::new(Mutex::new(MockState {
                 scan_results: vec![],
+                saved_networks: vec![],
                 should_fail_scan: false,
                 should_fail_connect: false,
                 connected_ssid: None,
@@ -58,6 +60,11 @@ impl MockWifiBackend {
     /// Configure mock to fail connect operations
     pub async fn set_connect_failure(&self, should_fail: bool) {
         self.inner.lock().await.should_fail_connect = should_fail;
+    }
+
+    /// Configure mock saved networks list
+    pub async fn set_saved_networks(&self, networks: Vec<SavedNetwork>) {
+        self.inner.lock().await.saved_networks = networks;
     }
 
     /// Simulate connection completion (for async connect testing)
@@ -137,6 +144,19 @@ impl WifiBackend for MockWifiBackend {
             ip_address: state.ip_address.clone(),
         })
     }
+
+    async fn list_networks(&self) -> WifiResult<Vec<SavedNetwork>> {
+        Ok(self.inner.lock().await.saved_networks.clone())
+    }
+
+    async fn remove_network(&self, ssid: &str) -> WifiResult<()> {
+        self.inner
+            .lock()
+            .await
+            .saved_networks
+            .retain(|n| n.ssid != ssid);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -213,5 +233,65 @@ mod tests {
         assert_eq!(status.state, ConnectionState::Idle);
         assert_eq!(status.ssid, None);
         assert_eq!(status.ip_address, None);
+    }
+
+    #[tokio::test]
+    async fn test_mock_backend_list_networks_empty() {
+        let backend = MockWifiBackend::new();
+        let result = backend.list_networks().await.unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_mock_backend_list_networks() {
+        let backend = MockWifiBackend::new();
+        backend
+            .set_saved_networks(vec![
+                SavedNetwork {
+                    ssid: "Home".into(),
+                    flags: "[CURRENT]".into(),
+                },
+                SavedNetwork {
+                    ssid: "Office".into(),
+                    flags: "".into(),
+                },
+            ])
+            .await;
+
+        let result = backend.list_networks().await.unwrap();
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].ssid, "Home");
+        assert_eq!(result[1].ssid, "Office");
+    }
+
+    #[tokio::test]
+    async fn test_mock_backend_remove_network() {
+        let backend = MockWifiBackend::new();
+        backend
+            .set_saved_networks(vec![
+                SavedNetwork {
+                    ssid: "Home".into(),
+                    flags: "".into(),
+                },
+                SavedNetwork {
+                    ssid: "Office".into(),
+                    flags: "".into(),
+                },
+            ])
+            .await;
+
+        backend.remove_network("Home").await.unwrap();
+
+        let result = backend.list_networks().await.unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].ssid, "Office");
+    }
+
+    #[tokio::test]
+    async fn test_mock_backend_remove_network_idempotent() {
+        let backend = MockWifiBackend::new();
+        // Removing a non-existent network must succeed
+        let result = backend.remove_network("NonExistent").await;
+        assert!(result.is_ok());
     }
 }

@@ -8,18 +8,20 @@ use crate::{
         authorization::AuthorizationService,
         connector::ConnectionService,
         error::ServiceResult,
+        net_management::NetworkManagementService,
         scanner::ScanService,
-        types::{ConnectionStatus, ScanState, WifiNetwork},
+        types::{ConnectionStatus, SavedNetwork, ScanState, WifiNetwork},
     },
 };
 
 /// Main WiFi commissioning service facade
 ///
-/// Orchestrates all service components (authorization, scan, connect)
+/// Orchestrates all service components (authorization, scan, connect, network management)
 pub struct WifiCommissioningService<B: WifiBackend> {
     pub authorization: Arc<AuthorizationService>,
     pub scanner: Arc<ScanService<B>>,
     pub connector: Arc<ConnectionService<B>>,
+    pub net_management: Arc<NetworkManagementService<B>>,
 }
 
 impl<B: WifiBackend> WifiCommissioningService<B> {
@@ -27,12 +29,14 @@ impl<B: WifiBackend> WifiCommissioningService<B> {
     pub fn new(backend: Arc<B>, secret: String) -> Self {
         let authorization = Arc::new(AuthorizationService::new(secret));
         let scanner = Arc::new(ScanService::new(backend.clone()));
-        let connector = Arc::new(ConnectionService::new(backend));
+        let connector = Arc::new(ConnectionService::new(backend.clone()));
+        let net_management = Arc::new(NetworkManagementService::new(backend));
 
         Self {
             authorization,
             scanner,
             connector,
+            net_management,
         }
     }
 
@@ -79,6 +83,16 @@ impl<B: WifiBackend> WifiCommissioningService<B> {
     /// Get connection status
     pub async fn connection_status(&self) -> ConnectionStatus {
         self.connector.status().await
+    }
+
+    /// List all networks saved in wpa_supplicant config
+    pub async fn list_networks(&self) -> ServiceResult<Vec<SavedNetwork>> {
+        self.net_management.list_networks().await
+    }
+
+    /// Remove all saved entries for the given SSID and persist the change
+    pub async fn remove_network(&self, ssid: &str) -> ServiceResult<()> {
+        self.net_management.remove_network(ssid).await
     }
 }
 

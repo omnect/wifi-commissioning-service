@@ -23,6 +23,12 @@ The `wifi-client.sh` script provides a simple command-line interface:
 
 # Disconnect
 ./wifi-client.sh disconnect
+
+# List networks saved in wpa_supplicant config
+./wifi-client.sh list-saved
+
+# Remove a saved network (for re-commissioning / credential rotation)
+./wifi-client.sh forget "MyNetwork"
 ```
 
 By default, the script uses `/var/run/wifi-commissioning.sock`. Override with:
@@ -47,6 +53,8 @@ The Unix socket transport serves an HTTP REST API. All responses are JSON.
 | POST | `/api/v1/connect` | Connect to network |
 | POST | `/api/v1/disconnect` | Disconnect |
 | GET | `/api/v1/status` | Connection status |
+| GET | `/api/v1/networks` | List saved networks |
+| POST | `/api/v1/networks/forget` | Remove a saved network by SSID |
 
 ## Available Endpoints
 
@@ -152,6 +160,64 @@ Response (200 OK):
 {
   "status": "ok"
 }
+```
+
+### 6. List Saved Networks
+
+Returns all networks currently saved in `wpa_supplicant.conf`:
+
+```bash
+curl --unix-socket /var/run/wifi-commissioning.sock \
+  http://localhost/api/v1/networks
+```
+
+Response (200 OK):
+```json
+{
+  "status": "ok",
+  "networks": [
+    { "ssid": "HomeNetwork", "flags": "[CURRENT]" },
+    { "ssid": "OfficeNetwork", "flags": "" }
+  ]
+}
+```
+
+### 7. Forget a Saved Network
+
+Remove a network by SSID and persist the change. Idempotent — succeeds even if the SSID is not found.
+
+```bash
+curl -X POST --unix-socket /var/run/wifi-commissioning.sock \
+  -H "Content-Type: application/json" \
+  -d '{"ssid": "OldNetwork"}' \
+  http://localhost/api/v1/networks/forget
+```
+
+Response (200 OK):
+```json
+{
+  "status": "ok"
+}
+```
+
+Typical re-commissioning workflow:
+```bash
+SOCK=/var/run/wifi-commissioning.sock
+
+# 1. Inspect what is saved
+curl -s --unix-socket $SOCK http://localhost/api/v1/networks | jq '.'
+
+# 2. Remove the stale credential
+curl -s -X POST --unix-socket $SOCK \
+  -H "Content-Type: application/json" \
+  -d '{"ssid":"OldNetwork"}' \
+  http://localhost/api/v1/networks/forget
+
+# 3. Commission with new credential
+curl -s -X POST --unix-socket $SOCK \
+  -H "Content-Type: application/json" \
+  -d '{"ssid":"OldNetwork","psk":"<new-64-hex-char-psk>"}' \
+  http://localhost/api/v1/connect
 ```
 
 ## Error Responses

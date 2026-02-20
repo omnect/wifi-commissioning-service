@@ -8,10 +8,14 @@ use serde::Serialize;
 
 use crate::{
     backend::WifiBackend,
-    core::{connector::ConnectionService, error::ServiceError, scanner::ScanService},
+    core::{
+        connector::ConnectionService, error::ServiceError,
+        net_management::NetworkManagementService, scanner::ScanService,
+    },
     protocol::{
-        ConnectParams, ConnectResponse, DisconnectResponse, ScanResultsResponse,
-        ScanStartedResponse, StatusResponse,
+        ConnectParams, ConnectResponse, DisconnectResponse, ForgetNetworkParams,
+        ForgetNetworkResponse, SavedNetworksResponse, ScanResultsResponse, ScanStartedResponse,
+        StatusResponse,
     },
 };
 
@@ -127,6 +131,23 @@ pub async fn status<B: WifiBackend>(
     HttpResponse::Ok().json(StatusResponse::ok(connection))
 }
 
+/// GET /api/v1/networks — List saved networks from wpa_supplicant config
+pub async fn list_saved_networks<B: WifiBackend>(
+    net_service: web::Data<Arc<NetworkManagementService<B>>>,
+) -> Result<HttpResponse, ApiError> {
+    let networks = net_service.list_networks().await?;
+    Ok(HttpResponse::Ok().json(SavedNetworksResponse::ok(networks)))
+}
+
+/// POST /api/v1/networks/forget — Remove a saved network by SSID
+pub async fn forget_network<B: WifiBackend>(
+    net_service: web::Data<Arc<NetworkManagementService<B>>>,
+    params: web::Json<ForgetNetworkParams>,
+) -> Result<HttpResponse, ApiError> {
+    net_service.remove_network(&params.ssid).await?;
+    Ok(HttpResponse::Ok().json(ForgetNetworkResponse::ok()))
+}
+
 /// Configure REST API routes for the given backend type
 pub fn configure_routes<B: WifiBackend>(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -135,7 +156,9 @@ pub fn configure_routes<B: WifiBackend>(cfg: &mut web::ServiceConfig) {
             .route("/scan/results", web::get().to(get_scan_results::<B>))
             .route("/connect", web::post().to(connect::<B>))
             .route("/disconnect", web::post().to(disconnect::<B>))
-            .route("/status", web::get().to(status::<B>)),
+            .route("/status", web::get().to(status::<B>))
+            .route("/networks", web::get().to(list_saved_networks::<B>))
+            .route("/networks/forget", web::post().to(forget_network::<B>)),
     );
 }
 
@@ -146,18 +169,24 @@ mod tests {
 
     use crate::{
         backend::MockWifiBackend,
-        core::{connector::ConnectionService, scanner::ScanService, types::WifiNetwork},
+        core::{
+            connector::ConnectionService,
+            net_management::NetworkManagementService,
+            scanner::ScanService,
+            types::{SavedNetwork, WifiNetwork},
+        },
     };
 
     use super::*;
 
-    /// Initialize an actix-web test service with both scan and connect routes.
+    /// Initialize an actix-web test service with scan, connect, and net-management routes.
     macro_rules! init_test_app {
-        ($scan:expr, $connect:expr) => {
+        ($scan:expr, $connect:expr, $net:expr) => {
             test::init_service(
                 App::new()
                     .app_data(web::Data::new($scan.clone()))
                     .app_data(web::Data::new($connect.clone()))
+                    .app_data(web::Data::new($net.clone()))
                     .configure(configure_routes::<MockWifiBackend>),
             )
             .await
@@ -169,10 +198,12 @@ mod tests {
     ) -> (
         Arc<ScanService<MockWifiBackend>>,
         Arc<ConnectionService<MockWifiBackend>>,
+        Arc<NetworkManagementService<MockWifiBackend>>,
     ) {
         let scan_service = Arc::new(ScanService::new(backend.clone()));
-        let connect_service = Arc::new(ConnectionService::new(backend));
-        (scan_service, connect_service)
+        let connect_service = Arc::new(ConnectionService::new(backend.clone()));
+        let net_service = Arc::new(NetworkManagementService::new(backend));
+        (scan_service, connect_service, net_service)
     }
 
     #[actix_web::test]
@@ -187,8 +218,8 @@ mod tests {
             }])
             .await;
 
-        let (scan_service, connect_service) = test_app(backend);
-        let app = init_test_app!(scan_service, connect_service);
+        let (scan_service, connect_service, net_service) = test_app(backend);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         let req = test::TestRequest::post().uri("/api/v1/scan").to_request();
         let resp = test::call_service(&app, req).await;
@@ -201,12 +232,12 @@ mod tests {
     #[actix_web::test]
     async fn test_scan_in_progress() {
         let backend = Arc::new(MockWifiBackend::new());
-        let (scan_service, connect_service) = test_app(backend);
+        let (scan_service, connect_service, net_service) = test_app(backend);
 
         // Start first scan directly
         scan_service.start_scan().await.unwrap();
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         // Second scan should return 409 Conflict
         let req = test::TestRequest::post().uri("/api/v1/scan").to_request();
@@ -229,13 +260,13 @@ mod tests {
             }])
             .await;
 
-        let (scan_service, connect_service) = test_app(backend);
+        let (scan_service, connect_service, net_service) = test_app(backend);
 
         // Start and wait for scan to complete
         scan_service.start_scan().await.unwrap();
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         let req = test::TestRequest::get()
             .uri("/api/v1/scan/results")
@@ -250,9 +281,9 @@ mod tests {
     #[actix_web::test]
     async fn test_status_endpoint() {
         let backend = Arc::new(MockWifiBackend::new());
-        let (scan_service, connect_service) = test_app(backend);
+        let (scan_service, connect_service, net_service) = test_app(backend);
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         let req = test::TestRequest::get().uri("/api/v1/status").to_request();
         let resp = test::call_service(&app, req).await;
@@ -267,9 +298,9 @@ mod tests {
     #[actix_web::test]
     async fn test_connect_endpoint() {
         let backend = Arc::new(MockWifiBackend::new());
-        let (scan_service, connect_service) = test_app(backend);
+        let (scan_service, connect_service, net_service) = test_app(backend);
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/connect")
@@ -288,9 +319,9 @@ mod tests {
     #[actix_web::test]
     async fn test_disconnect_endpoint() {
         let backend = Arc::new(MockWifiBackend::new());
-        let (scan_service, connect_service) = test_app(backend);
+        let (scan_service, connect_service, net_service) = test_app(backend);
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/disconnect")
@@ -305,9 +336,9 @@ mod tests {
     #[actix_web::test]
     async fn test_connect_invalid_psk_length() {
         let backend = Arc::new(MockWifiBackend::new());
-        let (scan_service, connect_service) = test_app(backend);
+        let (scan_service, connect_service, net_service) = test_app(backend);
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/connect")
@@ -326,9 +357,9 @@ mod tests {
     #[actix_web::test]
     async fn test_connect_invalid_psk_hex() {
         let backend = Arc::new(MockWifiBackend::new());
-        let (scan_service, connect_service) = test_app(backend);
+        let (scan_service, connect_service, net_service) = test_app(backend);
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/connect")
@@ -347,9 +378,9 @@ mod tests {
     #[actix_web::test]
     async fn test_connect_missing_fields() {
         let backend = Arc::new(MockWifiBackend::new());
-        let (scan_service, connect_service) = test_app(backend);
+        let (scan_service, connect_service, net_service) = test_app(backend);
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/connect")
@@ -364,9 +395,9 @@ mod tests {
     #[actix_web::test]
     async fn test_scan_results_before_scan_returns_conflict() {
         let backend = Arc::new(MockWifiBackend::new());
-        let (scan_service, connect_service) = test_app(backend);
+        let (scan_service, connect_service, net_service) = test_app(backend);
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         let req = test::TestRequest::get()
             .uri("/api/v1/scan/results")
@@ -415,9 +446,9 @@ mod tests {
             }])
             .await;
 
-        let (scan_service, connect_service) = test_app(backend);
+        let (scan_service, connect_service, net_service) = test_app(backend);
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         // First scan
         let req = test::TestRequest::post().uri("/api/v1/scan").to_request();
@@ -457,8 +488,9 @@ mod tests {
 
         let scan_service = Arc::new(ScanService::new(backend.clone()));
         let connect_service = Arc::new(ConnectionService::new(backend.clone()));
+        let net_service = Arc::new(NetworkManagementService::new(backend.clone()));
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         // First attempt — accepted but fails in background
         let req = test::TestRequest::post()
@@ -504,9 +536,9 @@ mod tests {
     #[actix_web::test]
     async fn test_status_after_connect() {
         let backend = Arc::new(MockWifiBackend::new());
-        let (scan_service, connect_service) = test_app(backend);
+        let (scan_service, connect_service, net_service) = test_app(backend);
 
-        let app = init_test_app!(scan_service, connect_service);
+        let app = init_test_app!(scan_service, connect_service, net_service);
 
         let req = test::TestRequest::post()
             .uri("/api/v1/connect")
@@ -528,5 +560,110 @@ mod tests {
         assert_eq!(body["state"], "connected");
         assert_eq!(body["ssid"], "TestNet");
         assert!(body["ip_address"].is_string());
+    }
+
+    // ── Network management endpoint tests ──────────────────────────────
+
+    #[actix_web::test]
+    async fn test_list_saved_networks_empty() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service, net_service) = test_app(backend);
+
+        let app = init_test_app!(scan_service, connect_service, net_service);
+
+        let req = test::TestRequest::get()
+            .uri("/api/v1/networks")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["status"], "ok");
+        assert!(body["networks"].as_array().unwrap().is_empty());
+    }
+
+    #[actix_web::test]
+    async fn test_list_saved_networks_with_entries() {
+        let backend = Arc::new(MockWifiBackend::new());
+        backend
+            .set_saved_networks(vec![
+                SavedNetwork {
+                    ssid: "Home".into(),
+                    flags: "[CURRENT]".into(),
+                },
+                SavedNetwork {
+                    ssid: "Office".into(),
+                    flags: "".into(),
+                },
+            ])
+            .await;
+
+        let (scan_service, connect_service, net_service) = test_app(backend);
+        let app = init_test_app!(scan_service, connect_service, net_service);
+
+        let req = test::TestRequest::get()
+            .uri("/api/v1/networks")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["networks"].as_array().unwrap().len(), 2);
+        assert_eq!(body["networks"][0]["ssid"], "Home");
+        assert_eq!(body["networks"][1]["ssid"], "Office");
+    }
+
+    #[actix_web::test]
+    async fn test_forget_network_endpoint() {
+        let backend = Arc::new(MockWifiBackend::new());
+        backend
+            .set_saved_networks(vec![
+                SavedNetwork {
+                    ssid: "Home".into(),
+                    flags: "".into(),
+                },
+                SavedNetwork {
+                    ssid: "Office".into(),
+                    flags: "".into(),
+                },
+            ])
+            .await;
+
+        let (scan_service, connect_service, net_service) = test_app(backend.clone());
+        let app = init_test_app!(scan_service, connect_service, net_service);
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/networks/forget")
+            .set_json(ForgetNetworkParams {
+                ssid: "Home".to_string(),
+            })
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["status"], "ok");
+
+        let remaining = backend.list_networks().await.unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].ssid, "Office");
+    }
+
+    #[actix_web::test]
+    async fn test_forget_nonexistent_network_is_ok() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service, net_service) = test_app(backend);
+
+        let app = init_test_app!(scan_service, connect_service, net_service);
+
+        let req = test::TestRequest::post()
+            .uri("/api/v1/networks/forget")
+            .set_json(ForgetNetworkParams {
+                ssid: "Ghost".to_string(),
+            })
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 }

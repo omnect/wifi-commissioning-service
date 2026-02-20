@@ -8,7 +8,10 @@ use tracing::info;
 
 use crate::{
     backend::WifiBackend,
-    core::{connector::ConnectionService, scanner::ScanService},
+    core::{
+        connector::ConnectionService, net_management::NetworkManagementService,
+        scanner::ScanService,
+    },
     transport::unix_socket::handlers,
 };
 
@@ -23,14 +26,17 @@ pub fn create<B: WifiBackend>(
     socket_path: &str,
     scan_service: Arc<ScanService<B>>,
     connect_service: Arc<ConnectionService<B>>,
+    net_mgmt_service: Arc<NetworkManagementService<B>>,
 ) -> std::io::Result<Server> {
     let scan_data = web::Data::new(scan_service);
     let conn_data = web::Data::new(connect_service);
+    let net_data = web::Data::new(net_mgmt_service);
 
     let server = HttpServer::new(move || {
         App::new()
             .app_data(scan_data.clone())
             .app_data(conn_data.clone())
+            .app_data(net_data.clone())
             .configure(handlers::configure_routes::<B>)
     });
 

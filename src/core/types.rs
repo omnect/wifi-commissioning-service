@@ -88,6 +88,46 @@ pub struct ConnectionStatus {
     pub ip_address: Option<String>,
 }
 
+/// Represents a saved WiFi network in wpa_supplicant config
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SavedNetwork {
+    /// Network SSID
+    pub ssid: String,
+    /// wpa_supplicant flags (e.g. "[CURRENT]", "[DISABLED]", or "")
+    pub flags: String,
+}
+
+/// Network list operation states (mirrors ScanState pattern)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[repr(u8)]
+pub enum NetworkListState {
+    Idle = 0,
+    Loading = 1,
+    Finished = 2,
+    Error = 3,
+}
+
+impl TryFrom<u8> for NetworkListState {
+    type Error = ();
+
+    fn try_from(value: u8) -> Result<Self, <Self as TryFrom<u8>>::Error> {
+        match value {
+            0 => Ok(NetworkListState::Idle),
+            1 => Ok(NetworkListState::Loading),
+            2 => Ok(NetworkListState::Finished),
+            3 => Ok(NetworkListState::Error),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<NetworkListState> for u8 {
+    fn from(state: NetworkListState) -> Self {
+        state as u8
+    }
+}
+
 /// Authorization state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthorizationState {

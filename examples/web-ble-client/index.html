@@ -116,6 +116,19 @@ Apache License, Version 2.0
           <button id="btnReset" class="buttons" disabled>Reset Bluetooth Device</button>
         </td>
       </tr>
+      <tr>
+        <td><hr style="width:246px;"/></td>
+      </tr>
+      <tr>
+        <td>
+          <button id="btnListSaved" class="buttons" disabled>List Saved Networks</button>
+        </td>
+      </tr>
+      <tr>
+        <td>
+          <ul id="savedNetworksList" style="width:246px; padding-left:1em; margin:4px 0;"></ul>
+        </td>
+      </tr>
    </table>
 
   <script>
@@ -208,7 +221,14 @@ Apache License, Version 2.0
     document.querySelector('#btnReset').addEventListener('click', function(event) {
       if (isWebBluetoothEnabled()) {
         ChromeSamples.clearLog();
+        document.querySelector('#btnListSaved').disabled = true;
         onResetButtonClick();
+      }
+    });
+
+    document.querySelector('#btnListSaved').addEventListener('click', function() {
+      if (isWebBluetoothEnabled()) {
+        onListSavedButtonClick();
       }
     });
 

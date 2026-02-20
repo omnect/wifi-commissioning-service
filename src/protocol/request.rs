@@ -2,6 +2,13 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Parameters for forget network request
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ForgetNetworkParams {
+    /// SSID of the network to remove from wpa_supplicant config
+    pub ssid: String,
+}
+
 /// Parameters for connect request
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ConnectParams {

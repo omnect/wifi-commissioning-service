@@ -12,7 +12,7 @@ use crate::{
     backend::WifiBackend,
     core::{
         service::WifiCommissioningService,
-        types::{ConnectionState, ScanState},
+        types::{ConnectionState, NetworkListState, ScanState},
     },
     transport::ble::{session::BleSession, uuids::SCAN_RESULT_CHUNK_SIZE},
 };
@@ -27,6 +27,11 @@ pub struct CharacteristicHandler<B: WifiBackend> {
     selected_chunk_index: Arc<RwLock<u8>>,
     scan_state_tx: watch::Sender<u8>,
     connect_state_tx: watch::Sender<u8>,
+    /// Saved-network list JSON split into SCAN_RESULT_CHUNK_SIZE-byte chunks
+    net_list_chunks: Arc<RwLock<Vec<Vec<u8>>>>,
+    /// Currently selected chunk index for the saved-network list
+    net_list_selected_idx: Arc<RwLock<u8>>,
+    net_list_state_tx: watch::Sender<u8>,
 }
 
 impl<B: WifiBackend> CharacteristicHandler<B> {
@@ -37,6 +42,7 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
     ) -> Self {
         let (scan_state_tx, _) = watch::channel(0u8);
         let (connect_state_tx, _) = watch::channel(0u8);
+        let (net_list_state_tx, _) = watch::channel(0u8);
         Self {
             service,
             session,
@@ -44,6 +50,9 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
             selected_chunk_index: Arc::new(RwLock::new(0)),
             scan_state_tx,
             connect_state_tx,
+            net_list_chunks: Arc::new(RwLock::new(Vec::new())),
+            net_list_selected_idx: Arc::new(RwLock::new(0)),
+            net_list_state_tx,
         }
     }
 
@@ -55,6 +64,11 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
     /// Subscribe to connect state change notifications
     pub fn subscribe_connect_state(&self) -> watch::Receiver<u8> {
         self.connect_state_tx.subscribe()
+    }
+
+    /// Subscribe to saved-network list state change notifications
+    pub fn subscribe_net_list_state(&self) -> watch::Receiver<u8> {
+        self.net_list_state_tx.subscribe()
     }
 
     /// Check if session is authorized
@@ -358,6 +372,164 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
             _ => {
                 warn!("Invalid connect state value: {}", value[0]);
                 Err(ReqError::NotSupported)
+            }
+        }
+    }
+
+    // ── Network management service ─────────────────────────────────────
+
+    /// Handle saved-network list status read — returns current state (1 byte)
+    #[instrument(skip_all)]
+    pub async fn handle_net_list_status_read(&self) -> Result<Vec<u8>, ReqError> {
+        self.check_authorized().await?;
+        let chunks_len = self.net_list_chunks.read().await.len();
+        let state = if chunks_len > 0 {
+            NetworkListState::Finished
+        } else {
+            NetworkListState::Idle
+        };
+        Ok(vec![u8::from(state)])
+    }
+
+    /// Handle saved-network list status write — state machine control
+    ///
+    /// Write 1 = refresh list, write 0 = reset to idle
+    #[instrument(skip_all, fields(value_len = value.len()))]
+    pub async fn handle_net_list_status_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
+        self.check_authorized().await?;
+
+        if value.is_empty() {
+            return Err(ReqError::InvalidValueLength);
+        }
+
+        match value[0] {
+            1 => {
+                debug!("Refreshing saved network list");
+                self.net_list_chunks.write().await.clear();
+                *self.net_list_selected_idx.write().await = 0;
+
+                match self.service.list_networks().await {
+                    Ok(networks) => {
+                        let service = self.service.clone();
+                        let chunks = self.net_list_chunks.clone();
+                        let tx = self.net_list_state_tx.clone();
+                        tokio::spawn(async move {
+                            let _ = service; // keep alive
+                            let json = match serde_json::to_string(&networks) {
+                                Ok(j) => j,
+                                Err(e) => {
+                                    error!("Failed to serialize saved networks: {}", e);
+                                    let _ = tx.send(u8::from(NetworkListState::Error));
+                                    return;
+                                }
+                            };
+                            let bytes = json.into_bytes();
+                            let built: Vec<Vec<u8>> = bytes
+                                .chunks(SCAN_RESULT_CHUNK_SIZE)
+                                .map(|c| c.to_vec())
+                                .collect();
+                            debug!(
+                                "Saved networks: {} bytes, {} chunks",
+                                bytes.len(),
+                                built.len()
+                            );
+                            *chunks.write().await = built;
+                            let _ = tx.send(u8::from(NetworkListState::Finished));
+                        });
+                        Ok(())
+                    }
+                    Err(e) => {
+                        let _ = self
+                            .net_list_state_tx
+                            .send(u8::from(NetworkListState::Error));
+                        error!("Failed to list saved networks: {}", e);
+                        Err(ReqError::Failed)
+                    }
+                }
+            }
+            0 => {
+                debug!("Saved-network list reset to idle");
+                self.net_list_chunks.write().await.clear();
+                *self.net_list_selected_idx.write().await = 0;
+                let _ = self
+                    .net_list_state_tx
+                    .send(u8::from(NetworkListState::Idle));
+                Ok(())
+            }
+            _ => {
+                warn!("Invalid net list status value: {}", value[0]);
+                Err(ReqError::NotSupported)
+            }
+        }
+    }
+
+    /// Handle saved-network list select read — returns number of chunks (1 byte)
+    #[instrument(skip_all)]
+    pub async fn handle_net_list_select_read(&self) -> Result<Vec<u8>, ReqError> {
+        self.check_authorized().await?;
+        let count = self.net_list_chunks.read().await.len() as u8;
+        Ok(vec![count])
+    }
+
+    /// Handle saved-network list select write — set chunk index for next result read
+    #[instrument(skip_all, fields(value_len = value.len()))]
+    pub async fn handle_net_list_select_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
+        self.check_authorized().await?;
+
+        if value.is_empty() {
+            return Err(ReqError::InvalidValueLength);
+        }
+
+        let index = value[0];
+        let max = self.net_list_chunks.read().await.len() as u8;
+
+        if index >= max {
+            warn!("Net list select index {} out of range (max {})", index, max);
+            return Err(ReqError::NotSupported);
+        }
+
+        *self.net_list_selected_idx.write().await = index;
+        Ok(())
+    }
+
+    /// Handle saved-network list result read — returns the chunk at the selected index
+    #[instrument(skip_all)]
+    pub async fn handle_net_list_result_read(&self) -> Result<Vec<u8>, ReqError> {
+        self.check_authorized().await?;
+
+        let index = *self.net_list_selected_idx.read().await as usize;
+        let chunks = self.net_list_chunks.read().await;
+
+        match chunks.get(index) {
+            Some(chunk) => Ok(chunk.clone()),
+            None => {
+                debug!("No saved-network result chunk at index {}", index);
+                Ok(vec![])
+            }
+        }
+    }
+
+    /// Handle forget network write — removes the network with the given SSID
+    ///
+    /// Write SSID as UTF-8 bytes. Operation is synchronous; success/failure
+    /// is signalled via the write acknowledgement.
+    #[instrument(skip_all, fields(value_len = value.len()))]
+    pub async fn handle_net_forget_write(&self, value: Vec<u8>) -> Result<(), ReqError> {
+        self.check_authorized().await?;
+
+        let ssid = String::from_utf8(value).map_err(|e| {
+            error!("Forget SSID is not valid UTF-8: {}", e);
+            ReqError::InvalidValueLength
+        })?;
+
+        match self.service.remove_network(&ssid).await {
+            Ok(_) => {
+                debug!("Forgot network '{}'", ssid);
+                Ok(())
+            }
+            Err(e) => {
+                error!("Failed to forget network '{}': {}", ssid, e);
+                Err(ReqError::Failed)
             }
         }
     }
@@ -840,6 +1012,141 @@ mod tests {
         let handler = create_test_handler().await;
 
         let result = handler.handle_psk_write(vec![42u8; 32]).await;
+        assert!(matches!(result, Err(ReqError::NotAuthorized)));
+    }
+
+    // ── Network management handler tests ────────────────────────────
+
+    #[tokio::test]
+    async fn test_net_list_status_read_idle() {
+        let handler = create_test_handler().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        let result = handler.handle_net_list_status_read().await.unwrap();
+        assert_eq!(result, vec![u8::from(NetworkListState::Idle)]);
+    }
+
+    #[tokio::test]
+    async fn test_net_list_status_unauthorized() {
+        let handler = create_test_handler().await;
+        let result = handler.handle_net_list_status_write(vec![1]).await;
+        assert!(matches!(result, Err(ReqError::NotAuthorized)));
+    }
+
+    #[tokio::test]
+    async fn test_net_list_full_flow() {
+        let (handler, backend) = create_test_handler_with_backend().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        backend
+            .set_saved_networks(vec![
+                crate::core::types::SavedNetwork {
+                    ssid: "Home".into(),
+                    flags: "[CURRENT]".into(),
+                },
+                crate::core::types::SavedNetwork {
+                    ssid: "Office".into(),
+                    flags: "".into(),
+                },
+            ])
+            .await;
+
+        let mut rx = handler.subscribe_net_list_state();
+
+        // Trigger refresh
+        handler.handle_net_list_status_write(vec![1]).await.unwrap();
+
+        // Wait for completion notification
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), u8::from(NetworkListState::Finished));
+
+        // Read chunk count
+        let count = handler.handle_net_list_select_read().await.unwrap();
+        assert!(count[0] > 0);
+
+        // Read all chunks and reassemble JSON
+        let num_chunks = count[0];
+        let mut all_data = Vec::new();
+        for i in 0..num_chunks {
+            handler.handle_net_list_select_write(vec![i]).await.unwrap();
+            let chunk = handler.handle_net_list_result_read().await.unwrap();
+            all_data.extend_from_slice(&chunk);
+        }
+
+        let json_str = String::from_utf8(all_data).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        assert_eq!(parsed[0]["ssid"], "Home");
+        assert_eq!(parsed[1]["ssid"], "Office");
+    }
+
+    #[tokio::test]
+    async fn test_net_list_reset_to_idle() {
+        let (handler, backend) = create_test_handler_with_backend().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        backend
+            .set_saved_networks(vec![crate::core::types::SavedNetwork {
+                ssid: "Home".into(),
+                flags: "".into(),
+            }])
+            .await;
+
+        let mut rx = handler.subscribe_net_list_state();
+
+        handler.handle_net_list_status_write(vec![1]).await.unwrap();
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), u8::from(NetworkListState::Finished));
+
+        // Reset
+        handler.handle_net_list_status_write(vec![0]).await.unwrap();
+        rx.changed().await.unwrap();
+        assert_eq!(*rx.borrow(), u8::from(NetworkListState::Idle));
+
+        let count = handler.handle_net_list_select_read().await.unwrap();
+        assert_eq!(count[0], 0);
+    }
+
+    #[tokio::test]
+    async fn test_net_forget_write() {
+        let (handler, backend) = create_test_handler_with_backend().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        backend
+            .set_saved_networks(vec![
+                crate::core::types::SavedNetwork {
+                    ssid: "Home".into(),
+                    flags: "".into(),
+                },
+                crate::core::types::SavedNetwork {
+                    ssid: "Office".into(),
+                    flags: "".into(),
+                },
+            ])
+            .await;
+
+        handler
+            .handle_net_forget_write(b"Home".to_vec())
+            .await
+            .unwrap();
+
+        let remaining = backend.list_networks().await.unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].ssid, "Office");
+    }
+
+    #[tokio::test]
+    async fn test_net_forget_invalid_utf8() {
+        let handler = create_test_handler().await;
+        handler.session.write().await.set_authorized(true).await;
+
+        let result = handler.handle_net_forget_write(vec![0xff, 0xfe]).await;
+        assert!(matches!(result, Err(ReqError::InvalidValueLength)));
+    }
+
+    #[tokio::test]
+    async fn test_net_forget_unauthorized() {
+        let handler = create_test_handler().await;
+        let result = handler.handle_net_forget_write(b"Home".to_vec()).await;
         assert!(matches!(result, Err(ReqError::NotAuthorized)));
     }
 }

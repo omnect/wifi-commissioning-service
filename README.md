@@ -47,6 +47,7 @@ src/
 │   ├── authorization.rs    # SHA3-256 auth with 5-min timeout
 │   ├── scanner.rs          # Scan state machine + service
 │   ├── connector.rs        # Connect state machine + service
+│   ├── net_management.rs   # Saved-network list and forget
 │   └── service.rs          # WifiCommissioningService facade
 │
 ├── backend/                # WiFi hardware abstraction
@@ -156,7 +157,7 @@ The service handles shutdown signals gracefully:
 
 ### Services
 
-The BLE interface exposes three GATT services. Service UUIDs are from the `d69a37ee-1d8a-4329-bd24-25db4af3c8xx` family; characteristic UUIDs are from the `811ce666-22e0-4a6d-a50f-0c78e076faax` family.
+The BLE interface exposes four GATT services. Service UUIDs are from the `d69a37ee-1d8a-4329-bd24-25db4af3c8xx` family; characteristic UUIDs are from the `811ce666-22e0-4a6d-a50f-0c78e076faax` family.
 
 1. **Authorization Service** (`d69a37ee-1d8a-4329-bd24-25db4af3c865`)
    - **Auth Key** (`faa6`): Write-only 32-byte SHA3-256 hash of the shared secret
@@ -170,6 +171,12 @@ The BLE interface exposes three GATT services. Service UUIDs are from the `d69a3
    - **Connect SSID** (`faa4`): Read/write — write SSID as UTF-8 (accumulated across writes)
    - **Connect PSK** (`faa5`): Write-only 32-byte raw PSK
    - **Connect State** (`faa3`): Read/write/notify — write `1` to connect, write `0` to disconnect; notifies on state change
+
+4. **Network Management Service** (`d69a37ee-1d8a-4329-bd24-25db4af3c866`)
+   - **Net List Status** (`faa7`): Read/write/notify — write `1` to refresh saved-network list, write `0` to reset; notifies on state change (0=idle, 1=loading, 2=finished, 3=error)
+   - **Net List Select** (`faa8`): Read chunk count (u8), write chunk index to select
+   - **Net List Result** (`faa9`): Read — returns the selected 100-byte JSON chunk (array of `{"ssid":"...","flags":"..."}`)
+   - **Net Forget** (`faaa`): Write-only UTF-8 SSID — removes that network from `wpa_supplicant.conf` (idempotent)
 
 ### Authorization Flow
 
@@ -198,6 +205,8 @@ The Unix socket transport exposes an HTTP REST API (via actix-web) over a Unix d
 | POST | `/api/v1/connect` | Connect to network | 202 |
 | POST | `/api/v1/disconnect` | Disconnect | 200 |
 | GET | `/api/v1/status` | Connection status | 200 |
+| GET | `/api/v1/networks` | List saved networks | 200 |
+| POST | `/api/v1/networks/forget` | Remove a saved network by SSID | 200 |
 
 ### Error Responses
 
@@ -312,6 +321,8 @@ cd examples/unix-socket-client
 ./wifi-client.sh connect "MyNetwork" "0123456789abcdef..."
 ./wifi-client.sh status
 ./wifi-client.sh disconnect
+./wifi-client.sh list-saved
+./wifi-client.sh forget "MyNetwork"
 
 # Or raw curl commands
 curl -X POST --unix-socket /run/wifi-commissioning.sock http://localhost/api/v1/scan

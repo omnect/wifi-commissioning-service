@@ -73,7 +73,7 @@ where
 {
     CharacteristicNotify {
         notify: true,
-        method: CharacteristicNotifyMethod::Fun(Box::new(move |mut notifier| {
+        method: CharacteristicNotifyMethod::Fun(Box::new(move |notifier| {
             let rx = subscribe(handler.clone());
             async move {
                 spawn_state_notifier(rx, notifier, label);
@@ -131,6 +131,7 @@ impl<B: WifiBackend> GattServer<B> {
                 self.build_authorization_service(handler.clone()),
                 self.build_scan_service(handler.clone()),
                 self.build_connect_service(handler.clone()),
+                self.build_net_management_service(handler.clone()),
             ],
             ..Default::default()
         }
@@ -236,6 +237,60 @@ impl<B: WifiBackend> GattServer<B> {
                     uuid: CONNECT_PSK_CHAR_UUID,
                     write: Some(char_write(handler, |h, v| async move {
                         h.handle_psk_write(v).await
+                    })),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        }
+    }
+
+    /// Build network management service
+    fn build_net_management_service(&self, handler: Arc<CharacteristicHandler<B>>) -> Service {
+        Service {
+            uuid: NET_MGMT_SERVICE_UUID,
+            primary: true,
+            characteristics: vec![
+                // Saved-network list status characteristic (read/write/notify)
+                Characteristic {
+                    uuid: NET_LIST_STATUS_CHAR_UUID,
+                    read: Some(char_read(handler.clone(), |h| async move {
+                        h.handle_net_list_status_read().await
+                    })),
+                    write: Some(char_write(handler.clone(), |h, v| async move {
+                        h.handle_net_list_status_write(v).await
+                    })),
+                    notify: Some(char_notify(
+                        handler.clone(),
+                        |h| h.subscribe_net_list_state(),
+                        "Net list state",
+                    )),
+                    ..Default::default()
+                },
+                // Saved-network list select characteristic (read chunk count, write index)
+                Characteristic {
+                    uuid: NET_LIST_SELECT_CHAR_UUID,
+                    read: Some(char_read(handler.clone(), |h| async move {
+                        h.handle_net_list_select_read().await
+                    })),
+                    write: Some(char_write(handler.clone(), |h, v| async move {
+                        h.handle_net_list_select_write(v).await
+                    })),
+                    ..Default::default()
+                },
+                // Saved-network list result characteristic (read selected chunk)
+                Characteristic {
+                    uuid: NET_LIST_RESULT_CHAR_UUID,
+                    read: Some(char_read(handler.clone(), |h| async move {
+                        h.handle_net_list_result_read().await
+                    })),
+                    ..Default::default()
+                },
+                // Forget network characteristic (write SSID bytes)
+                Characteristic {
+                    uuid: NET_FORGET_CHAR_UUID,
+                    write: Some(char_write(handler, |h, v| async move {
+                        h.handle_net_forget_write(v).await
                     })),
                     ..Default::default()
                 },

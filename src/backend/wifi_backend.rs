@@ -3,7 +3,7 @@
 use trait_variant::make;
 
 use crate::core::error::WifiResult;
-use crate::core::types::{ConnectionStatus, WifiNetwork};
+use crate::core::types::{ConnectionStatus, SavedNetwork, WifiNetwork};
 
 /// Abstraction over WiFi control interface (typically wpa_supplicant)
 ///
@@ -46,4 +46,12 @@ pub trait WifiBackend: Sync + 'static {
     ///
     /// Returns the connection state, SSID, and IP address (if connected)
     async fn status(&self) -> WifiResult<ConnectionStatus>;
+
+    /// List all saved networks from wpa_supplicant config
+    async fn list_networks(&self) -> WifiResult<Vec<SavedNetwork>>;
+
+    /// Remove all saved networks with the given SSID and persist the config
+    ///
+    /// Idempotent: returns Ok(()) if no matching network is found.
+    async fn remove_network(&self, ssid: &str) -> WifiResult<()>;
 }
