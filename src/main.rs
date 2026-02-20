@@ -70,12 +70,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let span = info_span!("unix_socket_transport");
         transport_tasks.spawn(
-            async move {
-                server
-                    .await
-                    .map_err(|e| format!("Unix socket server: {e}"))
-            }
-            .instrument(span),
+            async move { server.await.map_err(|e| format!("Unix socket server: {e}")) }
+                .instrument(span),
         );
     }
 
@@ -171,10 +167,7 @@ async fn shutdown_signal() {
 async fn start_ble_transport(
     service: Arc<WifiCommissioningService<WifiCtrlBackend>>,
     ble_name: String,
-) -> Result<
-    tokio::task::JoinHandle<Result<(), bluer::Error>>,
-    Box<dyn std::error::Error>,
-> {
+) -> Result<tokio::task::JoinHandle<Result<(), bluer::Error>>, Box<dyn std::error::Error>> {
     use wifi_commissioning_service::transport::ble::GattServer;
 
     let mut adapter = BleAdapter::new(ble_name).await?;
@@ -184,9 +177,7 @@ async fn start_ble_transport(
     adapter.start(gatt_server.clone()).await?;
 
     let span = info_span!("ble_transport");
-    let handle = tokio::spawn(
-        async move { adapter.run_event_loop().await }.instrument(span),
-    );
+    let handle = tokio::spawn(async move { adapter.run_event_loop().await }.instrument(span));
 
     Ok(handle)
 }

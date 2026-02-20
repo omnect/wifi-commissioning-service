@@ -80,7 +80,7 @@ Response (200 OK):
     {
       "ssid": "MyNetwork",
       "mac": "aa:bb:cc:dd:ee:ff",
-      "channel": 6,
+      "ch": 6,
       "rssi": -45
     },
     {

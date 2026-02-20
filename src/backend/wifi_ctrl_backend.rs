@@ -147,7 +147,7 @@ impl WifiBackend for WifiCtrlBackend {
             networks.push(WifiNetwork {
                 ssid: res.name.clone(),
                 mac: res.mac.clone(),
-                channel: Self::frequency_to_channel(&res.frequency),
+                ch: Self::frequency_to_channel(&res.frequency),
                 rssi: res.signal as i16,
             });
         }

@@ -313,5 +313,4 @@ impl<B: WifiBackend> GattServer<B> {
         info!("GATT application registered");
         Ok(handle)
     }
-
 }

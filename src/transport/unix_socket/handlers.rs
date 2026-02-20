@@ -169,7 +169,7 @@ mod tests {
             .set_scan_results(vec![WifiNetwork {
                 ssid: "TestNet".to_string(),
                 mac: "aa:bb:cc:dd:ee:ff".to_string(),
-                channel: 6,
+                ch: 6,
                 rssi: -65,
             }])
             .await;
@@ -223,7 +223,7 @@ mod tests {
             .set_scan_results(vec![WifiNetwork {
                 ssid: "TestNet".to_string(),
                 mac: "aa:bb:cc:dd:ee:ff".to_string(),
-                channel: 6,
+                ch: 6,
                 rssi: -65,
             }])
             .await;
@@ -427,12 +427,10 @@ mod tests {
 
     #[actix_web::test]
     async fn test_error_status_code_backend() {
-        use actix_web::ResponseError;
         use crate::core::error::WifiError;
+        use actix_web::ResponseError;
 
-        let err = ApiError::Service(ServiceError::Backend(
-            WifiError::ScanFailed("test".into()),
-        ));
+        let err = ApiError::Service(ServiceError::Backend(WifiError::ScanFailed("test".into())));
         assert_eq!(err.status_code(), StatusCode::BAD_GATEWAY);
     }
 
@@ -459,7 +457,7 @@ mod tests {
             .set_scan_results(vec![WifiNetwork {
                 ssid: "TestNet".to_string(),
                 mac: "aa:bb:cc:dd:ee:ff".to_string(),
-                channel: 6,
+                ch: 6,
                 rssi: -65,
             }])
             .await;

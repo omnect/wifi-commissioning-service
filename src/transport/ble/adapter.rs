@@ -1,9 +1,9 @@
 //! BLE adapter management
 
 use bluer::{
+    Adapter, AdapterEvent,
     adv::{Advertisement, AdvertisementHandle},
     gatt::local::ApplicationHandle,
-    Adapter, AdapterEvent,
 };
 use futures::StreamExt;
 use std::sync::Arc;
@@ -78,10 +78,7 @@ impl<B: WifiBackend> BleAdapter<B> {
         };
         self.adv_handle = Some(self.adapter.advertise(adv).await?);
 
-        info!(
-            "BLE adapter started, advertising as '{}'",
-            self.device_name
-        );
+        info!("BLE adapter started, advertising as '{}'", self.device_name);
 
         Ok(())
     }

@@ -122,7 +122,7 @@ mod tests {
             .set_scan_results(vec![WifiNetwork {
                 ssid: "TestNet".to_string(),
                 mac: "aa:bb:cc:dd:ee:ff".to_string(),
-                channel: 6,
+                ch: 6,
                 rssi: -65,
             }])
             .await;

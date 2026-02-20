@@ -113,15 +113,15 @@ cmd_list() {
     check_socket
     response=$(api_request GET "/scan/results")
 
-    networks=$(echo "$response" | jq -r '.networks[]? | "\(.ssid)\t\(.rssi)\t\(.channel)"' 2>/dev/null)
+    networks=$(echo "$response" | jq -r '.networks[]? | "\(.ssid)\t\(.rssi)\t\(.ch)"' 2>/dev/null)
 
     if [ -n "$networks" ]; then
         echo -e "${GREEN}Available networks:${NC}"
         echo ""
         printf "%-32s %-10s %s\n" "SSID" "RSSI" "Channel"
         printf "%-32s %-10s %s\n" "----" "----" "-------"
-        echo "$networks" | while IFS=$'\t' read -r ssid rssi channel; do
-            printf "%-32s %-10s %s\n" "$ssid" "$rssi" "$channel"
+        echo "$networks" | while IFS=$'\t' read -r ssid rssi ch; do
+            printf "%-32s %-10s %s\n" "$ssid" "$rssi" "$ch"
         done
     else
         echo -e "${YELLOW}No networks found. Try running scan first.${NC}"

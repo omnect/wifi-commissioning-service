@@ -2,7 +2,7 @@
 
 use bluer::gatt::local::ReqError;
 use std::{sync::Arc, time::Duration};
-use tokio::sync::{watch, RwLock};
+use tokio::sync::{RwLock, watch};
 use tracing::{debug, error, instrument, warn};
 
 /// Interval for polling scan completion state
@@ -236,7 +236,13 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
     #[instrument(skip_all)]
     pub async fn handle_ssid_read(&self) -> Result<Vec<u8>, ReqError> {
         self.check_authorized().await?;
-        let ssid = self.session.read().await.get_ssid().await.unwrap_or_default();
+        let ssid = self
+            .session
+            .read()
+            .await
+            .get_ssid()
+            .await
+            .unwrap_or_default();
         Ok(ssid.into_bytes())
     }
 
@@ -327,8 +333,9 @@ impl<B: WifiBackend> CharacteristicHandler<B> {
                         Ok(())
                     }
                     Err(e) => {
-                        let _ =
-                            self.connect_state_tx.send(u8::from(ConnectionState::Failed));
+                        let _ = self
+                            .connect_state_tx
+                            .send(u8::from(ConnectionState::Failed));
                         error!("Connection failed: {}", e);
                         Err(ReqError::Failed)
                     }
@@ -366,10 +373,8 @@ mod tests {
         handler
     }
 
-    async fn create_test_handler_with_backend() -> (
-        CharacteristicHandler<MockWifiBackend>,
-        Arc<MockWifiBackend>,
-    ) {
+    async fn create_test_handler_with_backend()
+    -> (CharacteristicHandler<MockWifiBackend>, Arc<MockWifiBackend>) {
         let backend = Arc::new(MockWifiBackend::new());
         let service = Arc::new(WifiCommissioningService::new(
             backend.clone(),
@@ -669,16 +674,16 @@ mod tests {
         // Configure mock to fail
         backend.set_connect_failure(true).await;
 
-        handler.handle_ssid_write(b"TestNet".to_vec()).await.unwrap();
+        handler
+            .handle_ssid_write(b"TestNet".to_vec())
+            .await
+            .unwrap();
         handler.handle_psk_write(vec![42u8; 32]).await.unwrap();
 
         let mut rx = handler.subscribe_connect_state();
 
         // First attempt — fails asynchronously
-        handler
-            .handle_connect_state_write(vec![1])
-            .await
-            .unwrap();
+        handler.handle_connect_state_write(vec![1]).await.unwrap();
         rx.changed().await.unwrap();
         assert_eq!(*rx.borrow(), u8::from(ConnectionState::Failed));
 
@@ -686,14 +691,14 @@ mod tests {
         backend.set_connect_failure(false).await;
 
         // Re-set credentials (buffers cleared after first connect)
-        handler.handle_ssid_write(b"TestNet".to_vec()).await.unwrap();
+        handler
+            .handle_ssid_write(b"TestNet".to_vec())
+            .await
+            .unwrap();
         handler.handle_psk_write(vec![42u8; 32]).await.unwrap();
 
         // Retry — must succeed, not return OperationInProgress
-        handler
-            .handle_connect_state_write(vec![1])
-            .await
-            .unwrap();
+        handler.handle_connect_state_write(vec![1]).await.unwrap();
         rx.changed().await.unwrap();
         assert_eq!(*rx.borrow(), u8::from(ConnectionState::Connected));
     }
@@ -705,16 +710,16 @@ mod tests {
         let handler = create_test_handler().await;
         handler.session.write().await.set_authorized(true).await;
 
-        handler.handle_ssid_write(b"TestNet".to_vec()).await.unwrap();
+        handler
+            .handle_ssid_write(b"TestNet".to_vec())
+            .await
+            .unwrap();
         handler.handle_psk_write(vec![42u8; 32]).await.unwrap();
 
         let mut rx = handler.subscribe_connect_state();
 
         // Connect
-        handler
-            .handle_connect_state_write(vec![1])
-            .await
-            .unwrap();
+        handler.handle_connect_state_write(vec![1]).await.unwrap();
         rx.changed().await.unwrap();
         assert_eq!(*rx.borrow(), u8::from(ConnectionState::Connected));
 
@@ -723,10 +728,7 @@ mod tests {
         assert_eq!(state, vec![u8::from(ConnectionState::Connected)]);
 
         // Disconnect
-        handler
-            .handle_connect_state_write(vec![0])
-            .await
-            .unwrap();
+        handler.handle_connect_state_write(vec![0]).await.unwrap();
 
         // State read confirms Idle
         let state = handler.handle_connect_state_read().await.unwrap();
@@ -806,10 +808,7 @@ mod tests {
             .await
             .unwrap();
         handler.handle_psk_write(vec![42u8; 32]).await.unwrap();
-        handler
-            .handle_connect_state_write(vec![1])
-            .await
-            .unwrap();
+        handler.handle_connect_state_write(vec![1]).await.unwrap();
 
         scan_rx.changed().await.unwrap();
         assert_eq!(*scan_rx.borrow(), u8::from(ScanState::Finished));

@@ -38,7 +38,12 @@ const WIFI_CONFIG_STATE_ERROR     = 3;
 var bleSecret = 'some-secret';
 var bluetoothDevice;
 var wifiScannerStateCharacteristic;
+var wifiScannerAP_Result_Characteristic;
+var wifiScannerAP_Select_Characteristic;
 var wifiConfigStateCharacteristic;
+var wifiConfigSSIDCharacteristic;
+var wifiConfigPskCharacteristic;
+var wifiAuthKeyCharacteristic;
 var accessPointsObj = [];
 
 
@@ -400,30 +405,3 @@ async function onSendButtonClick() {
   }
 }
 
-
-// This function handles the click event of the button 'Join Access Point'.
-async function onJoinButtonClick() {
-  try {
-    if (!bluetoothDevice) {
-      await requestDevice();
-    }
-    await connectDeviceAndCacheCharacteristics();
-
-    log('> Joining Access Point...');
-
-    document.querySelector('#btnScan').disabled = true;
-    document.querySelector('#btnSend').disabled = true;
-    document.querySelector('#selAccessPoint').disabled = true;
-    document.querySelector('#txtPassword').disabled = true;
-
-    log('> Starting Wi-Fi Config State Notifications...');
-    await wifiConfigStateCharacteristic.startNotifications();
-
-    log('> Writing Wi-Fi Config State...');
-    var wifiConfigState = Uint8Array.of(WIFI_CONFIG_STATE_JOIN);
-    await wifiConfigStateCharacteristic.writeValue(wifiConfigState);
-
-  } catch (error) {
-    log('> Error: ' + error);
-  }
-}

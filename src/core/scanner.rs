@@ -162,7 +162,7 @@ mod tests {
         let networks = vec![WifiNetwork {
             ssid: "TestNetwork".into(),
             mac: "aa:bb:cc:dd:ee:ff".into(),
-            channel: 6,
+            ch: 6,
             rssi: -65,
         }];
         sm.complete_scan(networks.clone());
@@ -192,7 +192,7 @@ mod tests {
             .set_scan_results(vec![WifiNetwork {
                 ssid: "TestNetwork".into(),
                 mac: "aa:bb:cc:dd:ee:ff".into(),
-                channel: 6,
+                ch: 6,
                 rssi: -65,
             }])
             .await;

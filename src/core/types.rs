@@ -10,7 +10,7 @@ pub struct WifiNetwork {
     /// MAC address (BSSID)
     pub mac: String,
     /// Channel number
-    pub channel: u16,
+    pub ch: u16,
     /// Signal strength in dBm
     pub rssi: i16,
 }
