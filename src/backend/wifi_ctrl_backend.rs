@@ -129,6 +129,62 @@ impl WifiCtrlBackend {
             .collect()
     }
 
+    /// Decode wpa_supplicant's SSID text encoding to raw bytes.
+    ///
+    /// wpa_supplicant represents non-printable bytes as `\xNN` hex sequences in
+    /// its scan output. A hidden network whose SSID is all null bytes therefore
+    /// arrives as the literal string `"\x00\x00..."` — none of whose bytes are
+    /// actually zero. We must decode first before testing for a hidden SSID.
+    fn decode_wpa_ssid(name: &str) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(name.len());
+        let mut chars = name.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                match chars.next() {
+                    Some('x') => {
+                        let h1 = chars.next().and_then(|c| c.to_digit(16));
+                        let h2 = chars.next().and_then(|c| c.to_digit(16));
+                        if let (Some(h1), Some(h2)) = (h1, h2) {
+                            bytes.push((h1 * 16 + h2) as u8);
+                        }
+                    }
+                    Some('\\') => bytes.push(b'\\'),
+                    Some(other) => {
+                        bytes.push(b'\\');
+                        bytes.extend_from_slice(other.to_string().as_bytes());
+                    }
+                    None => bytes.push(b'\\'),
+                }
+            } else {
+                bytes.extend_from_slice(c.to_string().as_bytes());
+            }
+        }
+        bytes
+    }
+
+    /// Convert raw wpa_supplicant scan results into `WifiNetwork` entries,
+    /// filtering out hidden networks (empty or all-zero SSIDs).
+    fn parse_scan_results(results: &[wifi_ctrl::sta::ScanResult]) -> Vec<WifiNetwork> {
+        let mut networks = Vec::new();
+        for res in results {
+            // Hidden networks broadcast a null-padded SSID. They cannot be
+            // commissioned by name, so exclude them from results.
+            // wpa_supplicant encodes non-printable bytes as \xNN literals, so
+            // we decode first before checking for all-zero bytes.
+            let decoded = Self::decode_wpa_ssid(&res.name);
+            if decoded.is_empty() || decoded.iter().all(|&b| b == 0) {
+                continue;
+            }
+            networks.push(WifiNetwork {
+                ssid: res.name.clone(),
+                mac: res.mac.clone(),
+                ch: Self::frequency_to_channel(&res.frequency),
+                rssi: res.signal as i16,
+            });
+        }
+        networks
+    }
+
     /// Get IP address using ip command
     async fn get_ip_address(&self) -> Option<String> {
         let output = Command::new("ip")
@@ -162,21 +218,7 @@ impl WifiBackend for WifiCtrlBackend {
             .await
             .map_err(|e| WifiError::WpaSupplicantError(format!("Scan failed: {}", e)))?;
 
-        let mut networks = Vec::new();
-        for res in results.iter() {
-            // Hidden networks broadcast a null-padded SSID. They cannot be
-            // commissioned by name, so exclude them from results.
-            if res.name.is_empty() || res.name.bytes().all(|b| b == 0) {
-                continue;
-            }
-            networks.push(WifiNetwork {
-                ssid: res.name.clone(),
-                mac: res.mac.clone(),
-                ch: Self::frequency_to_channel(&res.frequency),
-                rssi: res.signal as i16,
-            });
-        }
-
+        let networks = Self::parse_scan_results(&results);
         debug!("Scan complete, found {} networks", networks.len());
         Ok(networks)
     }
@@ -497,6 +539,119 @@ mod tests {
                 }
             )
         );
+    }
+
+    fn make_scan_result(
+        name: &str,
+        mac: &str,
+        freq: &str,
+        signal: isize,
+    ) -> wifi_ctrl::sta::ScanResult {
+        wifi_ctrl::sta::ScanResult {
+            name: name.to_string(),
+            mac: mac.to_string(),
+            frequency: freq.to_string(),
+            signal,
+            flags: String::new(),
+        }
+    }
+
+    #[test]
+    fn test_parse_scan_results_normal() {
+        let results = vec![make_scan_result("H5N1", "08:b6:57:e5:ec:00", "2412", -58)];
+        let networks = WifiCtrlBackend::parse_scan_results(&results);
+        assert_eq!(networks.len(), 1);
+        assert_eq!(networks[0].ssid, "H5N1");
+        assert_eq!(networks[0].mac, "08:b6:57:e5:ec:00");
+        assert_eq!(networks[0].ch, 1);
+        assert_eq!(networks[0].rssi, -58);
+    }
+
+    #[test]
+    fn test_parse_scan_results_filters_empty_ssid() {
+        let results = vec![make_scan_result("", "aa:bb:cc:dd:ee:ff", "2437", -70)];
+        let networks = WifiCtrlBackend::parse_scan_results(&results);
+        assert!(networks.is_empty());
+    }
+
+    #[test]
+    fn test_parse_scan_results_filters_null_byte_ssid() {
+        // wpa_supplicant encodes a hidden SSID of 21 null bytes as literal \x00 sequences
+        let hidden = "\\x00".repeat(21);
+        let results = vec![make_scan_result(&hidden, "de:91:bf:ce:ca:23", "2462", -76)];
+        let networks = WifiCtrlBackend::parse_scan_results(&results);
+        assert!(networks.is_empty());
+    }
+
+    #[test]
+    fn test_parse_scan_results_filters_single_null_byte_ssid() {
+        let results = vec![make_scan_result("\\x00", "aa:bb:cc:dd:ee:ff", "2437", -70)];
+        let networks = WifiCtrlBackend::parse_scan_results(&results);
+        assert!(networks.is_empty());
+    }
+
+    #[test]
+    fn test_parse_scan_results_keeps_ssid_with_embedded_null() {
+        // An SSID like "Net\x00work" has non-null bytes — it is not hidden
+        let results = vec![make_scan_result(
+            "Net\\x00work",
+            "aa:bb:cc:dd:ee:ff",
+            "2437",
+            -70,
+        )];
+        let networks = WifiCtrlBackend::parse_scan_results(&results);
+        assert_eq!(networks.len(), 1);
+        assert_eq!(networks[0].ssid, "Net\\x00work");
+    }
+
+    #[test]
+    fn test_parse_scan_results_mixed_hidden_and_visible() {
+        let hidden = "\\x00".repeat(21);
+        let results = vec![
+            make_scan_result("Visible", "aa:bb:cc:dd:ee:ff", "2412", -60),
+            make_scan_result(&hidden, "de:91:bf:ce:ca:23", "2462", -76),
+            make_scan_result("", "11:22:33:44:55:66", "2437", -80),
+            make_scan_result("AlsoVisible", "77:88:99:aa:bb:cc", "5180", -55),
+        ];
+        let networks = WifiCtrlBackend::parse_scan_results(&results);
+        assert_eq!(networks.len(), 2);
+        assert_eq!(networks[0].ssid, "Visible");
+        assert_eq!(networks[1].ssid, "AlsoVisible");
+        assert_eq!(networks[1].ch, 36);
+    }
+
+    #[test]
+    fn test_decode_wpa_ssid_plain() {
+        assert_eq!(WifiCtrlBackend::decode_wpa_ssid("H5N1"), b"H5N1");
+    }
+
+    #[test]
+    fn test_decode_wpa_ssid_null_bytes() {
+        // 21 null bytes as wpa_supplicant encodes them
+        let encoded = "\\x00".repeat(21);
+        let decoded = WifiCtrlBackend::decode_wpa_ssid(&encoded);
+        assert_eq!(decoded.len(), 21);
+        assert!(decoded.iter().all(|&b| b == 0));
+    }
+
+    #[test]
+    fn test_decode_wpa_ssid_mixed() {
+        let decoded = WifiCtrlBackend::decode_wpa_ssid("Net\\x00work");
+        assert_eq!(decoded, b"Net\x00work");
+    }
+
+    #[test]
+    fn test_decode_wpa_ssid_escaped_backslash() {
+        let decoded = WifiCtrlBackend::decode_wpa_ssid("A\\\\B");
+        assert_eq!(decoded, b"A\\B");
+    }
+
+    #[test]
+    fn test_hidden_ssid_null_encoded_is_filtered() {
+        // Ensure the all-\x00 SSID observed in the wild is rejected
+        let name = "\\x00".repeat(21);
+        let decoded = WifiCtrlBackend::decode_wpa_ssid(&name);
+        assert!(decoded.iter().all(|&b| b == 0));
     }
 
     #[test]
