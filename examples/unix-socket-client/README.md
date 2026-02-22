@@ -80,10 +80,11 @@ curl --unix-socket /var/run/wifi-commissioning.sock \
   http://localhost/api/v1/scan/results
 ```
 
-Response (200 OK):
+Response (200 OK) — scan finished:
 ```json
 {
   "status": "ok",
+  "state": "finished",
   "networks": [
     {
       "ssid": "MyNetwork",
@@ -94,10 +95,19 @@ Response (200 OK):
     {
       "ssid": "GuestNetwork",
       "mac": "11:22:33:44:55:66",
-      "channel": 11,
+      "ch": 11,
       "rssi": -67
     }
   ]
+}
+```
+
+Response (200 OK) — scan in progress:
+```json
+{
+  "status": "ok",
+  "state": "scanning",
+  "networks": []
 }
 ```
 
@@ -142,7 +152,8 @@ Response (200 OK):
   "status": "ok",
   "state": "connected",
   "ssid": "MyNetwork",
-  "ip_address": "192.168.1.100"
+  "ip_address": "192.168.1.100",
+  "interface_name": "wlan0"
 }
 ```
 
@@ -228,7 +239,7 @@ Errors return the appropriate HTTP status code with a JSON body:
 | ----------- | ---------- | --------- |
 | 400 | `invalid_params` | Invalid request body (e.g., bad PSK format) |
 | 409 | `operation_in_progress` | Scan or connect already running |
-| 409 | `invalid_state` | No scan results available |
+| 409 | `invalid_state` | No scan has been started (idle/error state) |
 | 502 | `backend_error` | WiFi backend failure |
 
 Example error response (409 Conflict):

@@ -10,7 +10,7 @@ use crate::{
     backend::WifiBackend,
     core::{
         connector::ConnectionService, error::ServiceError,
-        net_management::NetworkManagementService, scanner::ScanService,
+        net_management::NetworkManagementService, scanner::ScanService, types::ScanState,
     },
     protocol::{
         ConnectParams, ConnectResponse, DisconnectResponse, ForgetNetworkParams,
@@ -18,6 +18,9 @@ use crate::{
         StatusResponse,
     },
 };
+
+/// Newtype for the WiFi interface name, used as actix-web app data
+pub struct InterfaceName(pub String);
 
 /// JSON error response body
 #[derive(Debug, Serialize)]
@@ -97,11 +100,19 @@ pub async fn scan<B: WifiBackend>(
 }
 
 /// GET /api/v1/scan/results — Get scan results
+///
+/// Returns the current scan state alongside any available networks.
+/// While scanning is in progress, returns 200 with state="scanning" and an empty
+/// network list so clients can poll without error handling.
 pub async fn get_scan_results<B: WifiBackend>(
     scan_service: web::Data<Arc<ScanService<B>>>,
 ) -> Result<HttpResponse, ApiError> {
+    let state = scan_service.state().await;
+    if state == ScanState::Scanning {
+        return Ok(HttpResponse::Ok().json(ScanResultsResponse::ok(state, vec![])));
+    }
     let networks = scan_service.results().await?;
-    Ok(HttpResponse::Ok().json(ScanResultsResponse::ok(networks)))
+    Ok(HttpResponse::Ok().json(ScanResultsResponse::ok(state, networks)))
 }
 
 /// POST /api/v1/connect — Connect to a WiFi network
@@ -126,9 +137,10 @@ pub async fn disconnect<B: WifiBackend>(
 /// GET /api/v1/status — Get connection status
 pub async fn status<B: WifiBackend>(
     connect_service: web::Data<Arc<ConnectionService<B>>>,
+    interface_name: web::Data<InterfaceName>,
 ) -> HttpResponse {
     let connection = connect_service.status().await;
-    HttpResponse::Ok().json(StatusResponse::ok(connection))
+    HttpResponse::Ok().json(StatusResponse::ok(connection, &interface_name.0))
 }
 
 /// GET /api/v1/networks — List saved networks from wpa_supplicant config
@@ -179,6 +191,8 @@ mod tests {
 
     use super::*;
 
+    const TEST_INTERFACE_NAME: &str = "wlan0";
+
     /// Initialize an actix-web test service with scan, connect, and net-management routes.
     macro_rules! init_test_app {
         ($scan:expr, $connect:expr, $net:expr) => {
@@ -187,12 +201,16 @@ mod tests {
                     .app_data(web::Data::new($scan.clone()))
                     .app_data(web::Data::new($connect.clone()))
                     .app_data(web::Data::new($net.clone()))
+                    .app_data(web::Data::new(InterfaceName(
+                        TEST_INTERFACE_NAME.to_string(),
+                    )))
                     .configure(configure_routes::<MockWifiBackend>),
             )
             .await
         };
     }
 
+    #[allow(clippy::type_complexity)]
     fn test_app(
         backend: Arc<MockWifiBackend>,
     ) -> (
@@ -276,6 +294,7 @@ mod tests {
 
         let body: serde_json::Value = test::read_body_json(resp).await;
         assert_eq!(body["status"], "ok");
+        assert_eq!(body["state"], "finished");
     }
 
     #[actix_web::test]
@@ -291,6 +310,7 @@ mod tests {
 
         let body: serde_json::Value = test::read_body_json(resp).await;
         assert_eq!(body["status"], "ok");
+        assert_eq!(body["interface_name"], TEST_INTERFACE_NAME);
     }
 
     // ── Connect/Disconnect endpoint tests ──────────────────────────────
@@ -410,6 +430,32 @@ mod tests {
     }
 
     #[actix_web::test]
+    async fn test_scan_results_while_scanning() {
+        let backend = Arc::new(MockWifiBackend::new());
+        // Delay scan completion so we can observe the scanning state
+        backend
+            .set_scan_delay(tokio::time::Duration::from_secs(5))
+            .await;
+
+        let (scan_service, connect_service, net_service) = test_app(backend);
+
+        scan_service.start_scan().await.unwrap();
+
+        let app = init_test_app!(scan_service, connect_service, net_service);
+
+        let req = test::TestRequest::get()
+            .uri("/api/v1/scan/results")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["state"], "scanning");
+        assert!(body["networks"].as_array().unwrap().is_empty());
+    }
+
+    #[actix_web::test]
     async fn test_error_status_code_backend() {
         use crate::core::error::WifiError;
         use actix_web::ResponseError;
@@ -465,6 +511,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
 
         let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["state"], "finished");
         assert_eq!(body["networks"][0]["ssid"], "TestNet");
 
         // Second scan (from Finished state)
@@ -560,6 +607,7 @@ mod tests {
         assert_eq!(body["state"], "connected");
         assert_eq!(body["ssid"], "TestNet");
         assert!(body["ip_address"].is_string());
+        assert_eq!(body["interface_name"], TEST_INTERFACE_NAME);
     }
 
     // ── Network management endpoint tests ──────────────────────────────

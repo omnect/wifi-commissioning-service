@@ -169,14 +169,16 @@ cmd_status() {
     state=$(echo "$response" | jq -r '.state' 2>/dev/null)
     ssid=$(echo "$response" | jq -r '.ssid // "N/A"' 2>/dev/null)
     ip=$(echo "$response" | jq -r '.ip_address // "N/A"' 2>/dev/null)
+    iface=$(echo "$response" | jq -r '.interface_name' 2>/dev/null)
 
     echo -e "${GREEN}Status:${NC}"
-    echo "  State: $state"
+    echo "  Interface: $iface"
+    echo "  State:     $state"
     if [ "$ssid" != "N/A" ] && [ "$ssid" != "null" ]; then
-        echo "  SSID:  $ssid"
+        echo "  SSID:      $ssid"
     fi
     if [ "$ip" != "N/A" ] && [ "$ip" != "null" ]; then
-        echo "  IP:    $ip"
+        echo "  IP:        $ip"
     fi
 }
 

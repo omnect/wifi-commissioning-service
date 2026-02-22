@@ -35,6 +35,7 @@ pub struct ScanStartedResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ScanResultsResponse {
     pub status: String,
+    pub state: ScanState,
     pub networks: Vec<WifiNetwork>,
 }
 
@@ -57,6 +58,7 @@ pub struct StatusResponse {
     pub status: String,
     #[serde(flatten)]
     pub connection: ConnectionStatus,
+    pub interface_name: String,
 }
 
 /// Response for list saved networks request
@@ -82,9 +84,10 @@ impl ScanStartedResponse {
 }
 
 impl ScanResultsResponse {
-    pub fn ok(networks: Vec<WifiNetwork>) -> Self {
+    pub fn ok(state: ScanState, networks: Vec<WifiNetwork>) -> Self {
         Self {
             status: "ok".to_string(),
+            state,
             networks,
         }
     }
@@ -108,10 +111,11 @@ impl DisconnectResponse {
 }
 
 impl StatusResponse {
-    pub fn ok(connection: ConnectionStatus) -> Self {
+    pub fn ok(connection: ConnectionStatus, interface_name: &str) -> Self {
         Self {
             status: "ok".to_string(),
             connection,
+            interface_name: interface_name.to_string(),
         }
     }
 }
@@ -157,12 +161,14 @@ mod tests {
             rssi: -65,
         }];
 
-        let response = ScanResultsResponse::ok(networks.clone());
+        let response = ScanResultsResponse::ok(ScanState::Finished, networks.clone());
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains(r#""status":"ok""#));
+        assert!(json.contains(r#""state":"finished""#));
         assert!(json.contains(r#""TestNet""#));
 
         let deserialized: ScanResultsResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.state, ScanState::Finished);
         assert_eq!(deserialized.networks.len(), 1);
         assert_eq!(deserialized.networks[0].ssid, "TestNet");
     }
@@ -190,11 +196,12 @@ mod tests {
             ip_address: Some("192.168.1.100".to_string()),
         };
 
-        let response = StatusResponse::ok(connection);
+        let response = StatusResponse::ok(connection, "wlan0");
         let json = serde_json::to_string(&response).unwrap();
         assert!(json.contains(r#""status":"ok""#));
         assert!(json.contains(r#""state":"connected""#));
         assert!(json.contains(r#""MyNetwork""#));
         assert!(json.contains(r#""192.168.1.100""#));
+        assert!(json.contains(r#""interface_name":"wlan0""#));
     }
 }

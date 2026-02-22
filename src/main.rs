@@ -62,7 +62,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if args.enable_unix_socket {
         info!("Starting Unix socket transport on {}", args.socket_path);
 
-        let handle = start_unix_socket_transport(&args.socket_path, service.clone())?;
+        let handle =
+            start_unix_socket_transport(&args.socket_path, &args.interface, service.clone())?;
         transport_tasks.spawn(async move {
             handle
                 .await
@@ -161,12 +162,14 @@ async fn shutdown_signal() {
 
 fn start_unix_socket_transport(
     socket_path: &str,
+    interface_name: &str,
     service: Arc<WifiCommissioningService<WifiCtrlBackend>>,
 ) -> Result<tokio::task::JoinHandle<Result<(), String>>, Box<dyn std::error::Error>> {
     use wifi_commissioning_service::transport::unix_socket::server;
 
     let srv = server::create(
         socket_path,
+        interface_name,
         service.scanner.clone(),
         service.connector.clone(),
         service.net_management.clone(),

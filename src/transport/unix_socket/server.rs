@@ -12,7 +12,7 @@ use crate::{
         connector::ConnectionService, net_management::NetworkManagementService,
         scanner::ScanService,
     },
-    transport::unix_socket::handlers,
+    transport::unix_socket::handlers::{self, InterfaceName},
 };
 
 /// Create the REST API server bound to a Unix domain socket.
@@ -24,6 +24,7 @@ use crate::{
 /// - Otherwise, create a new socket at socket_path (standalone/testing mode)
 pub fn create<B: WifiBackend>(
     socket_path: &str,
+    interface_name: &str,
     scan_service: Arc<ScanService<B>>,
     connect_service: Arc<ConnectionService<B>>,
     net_mgmt_service: Arc<NetworkManagementService<B>>,
@@ -31,12 +32,14 @@ pub fn create<B: WifiBackend>(
     let scan_data = web::Data::new(scan_service);
     let conn_data = web::Data::new(connect_service);
     let net_data = web::Data::new(net_mgmt_service);
+    let iface_data = web::Data::new(InterfaceName(interface_name.to_string()));
 
     let server = HttpServer::new(move || {
         App::new()
             .app_data(scan_data.clone())
             .app_data(conn_data.clone())
             .app_data(net_data.clone())
+            .app_data(iface_data.clone())
             .configure(handlers::configure_routes::<B>)
     });
 

@@ -21,6 +21,7 @@ struct MockState {
     connected_ssid: Option<String>,
     connection_state: ConnectionState,
     ip_address: Option<String>,
+    scan_delay: Option<std::time::Duration>,
 }
 
 /// Mock WiFi backend for testing
@@ -43,6 +44,7 @@ impl MockWifiBackend {
                 connected_ssid: None,
                 connection_state: ConnectionState::Idle,
                 ip_address: None,
+                scan_delay: None,
             })),
         }
     }
@@ -60,6 +62,11 @@ impl MockWifiBackend {
     /// Configure mock to fail connect operations
     pub async fn set_connect_failure(&self, should_fail: bool) {
         self.inner.lock().await.should_fail_connect = should_fail;
+    }
+
+    /// Configure mock to delay scan completion
+    pub async fn set_scan_delay(&self, delay: std::time::Duration) {
+        self.inner.lock().await.scan_delay = Some(delay);
     }
 
     /// Configure mock saved networks list
@@ -92,11 +99,21 @@ impl Default for MockWifiBackend {
 
 impl WifiBackend for MockWifiBackend {
     async fn scan(&self) -> WifiResult<Vec<WifiNetwork>> {
-        let state = self.inner.lock().await;
-        if state.should_fail_scan {
+        let (should_fail, delay, results) = {
+            let state = self.inner.lock().await;
+            (
+                state.should_fail_scan,
+                state.scan_delay,
+                state.scan_results.clone(),
+            )
+        };
+        if let Some(d) = delay {
+            tokio::time::sleep(d).await;
+        }
+        if should_fail {
             Err(WifiError::ScanFailed("Mock scan failure".into()))
         } else {
-            Ok(state.scan_results.clone())
+            Ok(results)
         }
     }
 

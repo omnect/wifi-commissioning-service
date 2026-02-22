@@ -94,7 +94,7 @@ cargo build --release --features systemd
 
 ### Testing
 
-Run the comprehensive test suite (97 tests):
+Run the comprehensive test suite (132 tests):
 
 ```bash
 cargo test
@@ -220,7 +220,7 @@ Errors return the appropriate HTTP status code with a JSON body:
 | ----------- | ---------- | --------- |
 | 400 | `invalid_params` | Invalid request body (e.g., bad PSK format) |
 | 409 | `operation_in_progress` | Scan or connect already running |
-| 409 | `invalid_state` | No scan results available |
+| 409 | `invalid_state` | No scan has been started (idle/error state) |
 | 502 | `backend_error` | WiFi backend failure |
 
 ### Quick Test with curl
@@ -333,7 +333,7 @@ See [examples/unix-socket-client/README.md](examples/unix-socket-client/README.m
 
 ### Unit and Integration Tests
 
-The project includes 97 comprehensive tests covering:
+The project includes 132 comprehensive tests covering:
 
 - Authorization service (5 tests)
 - Scanner service (5 tests)
