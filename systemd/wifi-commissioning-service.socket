@@ -1,0 +1,13 @@
+[Unit]
+Description=WiFi Commissioning Service Unix Socket
+PartOf=wifi-commissioning-service.service
+
+[Socket]
+RuntimeDirectory=wifi-commissioning-service
+ListenStream=/run/wifi-commissioning-service/api.sock
+SocketMode=0660
+SocketUser=wifi_commissioning
+SocketGroup=wpa_supplicant
+
+[Install]
+WantedBy=sockets.target

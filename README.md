@@ -119,7 +119,7 @@ Options:
       --ble-name <NAME>        BLE advertised device name [default: omnectWifiConfig]
       --enable-ble             Enable BLE transport [default: true]
       --enable-unix-socket     Enable Unix socket transport [default: false]
-      --socket-path <PATH>     Unix socket path [default: /run/wifi-commissioning.sock]
+      --socket-path <PATH>     Unix socket path [default: /run/wifi-commissioning-service/api.sock]
       --socket-mode <MODE>     Socket permissions in octal [default: 660]
 ```
 
@@ -226,7 +226,7 @@ Errors return the appropriate HTTP status code with a JSON body:
 ### Quick Test with curl
 
 ```bash
-SOCK=/run/wifi-commissioning.sock
+SOCK=/run/wifi-commissioning-service/api.sock
 
 # Start scan
 curl -X POST --unix-socket $SOCK http://localhost/api/v1/scan
@@ -253,14 +253,16 @@ The crate `wifi-commissioning-service` has the optional feature `systemd`.
 
 If you enable `systemd` it [notifies](https://www.freedesktop.org/software/systemd/man/sd_notify.html#READY=1) `systemd` that the startup is finished.
 
-The systemd service file `systemd/wifi-commissioning-service@.service` is using the script `omnect_get_deviceid.sh` (see *-b* option), in order to supply the device ID. In the case the service is not used in combination with the *meta-omnect* layer, it has to be adapted accordingly.
+The systemd service file `systemd/wifi-commissioning-service.service` uses the script `omnect_get_deviceid.sh` (see *-b* option), in order to supply the device ID. In the case the service is not used in combination with the *meta-omnect* layer, it has to be adapted accordingly.
+
+The WiFi interface is configured in `/etc/default/wifi-commissioning` (see `systemd/wifi-commissioning` for the default).
 
 ### Socket Activation (Production)
 
 In production (omnect-os), the service uses **systemd socket activation** for the Unix socket transport:
 
-- `wifi-commissioning-service@.socket` - Creates and manages the Unix socket
-- `wifi-commissioning-service@.service` - The service itself
+- `wifi-commissioning-service.socket` - Creates and manages the Unix socket at `/run/wifi-commissioning-service/api.sock`
+- `wifi-commissioning-service.service` - The service itself
 
 systemd creates the socket before starting the service, ensuring the socket is available immediately.
 
@@ -268,19 +270,19 @@ systemd creates the socket before starting the service, ensuring the socket is a
 
 ```bash
 # Enable both socket and service
-sudo systemctl enable wifi-commissioning-service@wlan0.socket
-sudo systemctl enable wifi-commissioning-service@wlan0.service
+sudo systemctl enable wifi-commissioning-service.socket
+sudo systemctl enable wifi-commissioning-service.service
 
 # Start the socket (service starts on-demand or can be started manually)
-sudo systemctl start wifi-commissioning-service@wlan0.socket
-sudo systemctl start wifi-commissioning-service@wlan0.service
+sudo systemctl start wifi-commissioning-service.socket
+sudo systemctl start wifi-commissioning-service.service
 
 # Check status
-sudo systemctl status wifi-commissioning-service@wlan0.service
-sudo systemctl status wifi-commissioning-service@wlan0.socket
+sudo systemctl status wifi-commissioning-service.service
+sudo systemctl status wifi-commissioning-service.socket
 ```
 
-**Socket path:** `/run/wifi-commissioning-wlan0.sock`
+**Socket path:** `/run/wifi-commissioning-service/api.sock`
 
 ### Standalone Mode (Testing/Development)
 
@@ -325,8 +327,8 @@ cd examples/unix-socket-client
 ./wifi-client.sh forget "MyNetwork"
 
 # Or raw curl commands
-curl -X POST --unix-socket /run/wifi-commissioning.sock http://localhost/api/v1/scan
-curl --unix-socket /run/wifi-commissioning.sock http://localhost/api/v1/status
+curl -X POST --unix-socket /run/wifi-commissioning-service/api.sock http://localhost/api/v1/scan
+curl --unix-socket /run/wifi-commissioning-service/api.sock http://localhost/api/v1/status
 ```
 
 See [examples/unix-socket-client/README.md](examples/unix-socket-client/README.md) for detailed usage instructions.

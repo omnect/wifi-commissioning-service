@@ -4,7 +4,7 @@
 
 set -e
 
-SOCKET_PATH="${WIFI_SOCKET_PATH:-/var/run/wifi-commissioning.sock}"
+SOCKET_PATH="${WIFI_SOCKET_PATH:-/run/wifi-commissioning-service/api.sock}"
 BASE_URL="http://localhost/api/v1"
 
 # Colors for output
@@ -28,7 +28,7 @@ Commands:
     forget <ssid>           Remove a saved network by SSID
 
 Environment:
-    WIFI_SOCKET_PATH    Path to Unix socket (default: /var/run/wifi-commissioning.sock)
+    WIFI_SOCKET_PATH    Path to Unix socket (default: /run/wifi-commissioning-service/api.sock)
 
 Examples:
     $0 scan

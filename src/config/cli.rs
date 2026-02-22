@@ -27,7 +27,7 @@ pub struct CliArgs {
     pub enable_unix_socket: bool,
 
     /// Path for Unix socket
-    #[arg(long, default_value = "/run/wifi-commissioning.sock")]
+    #[arg(long, default_value = "/run/wifi-commissioning-service/api.sock")]
     pub socket_path: String,
 
     /// Socket file permissions (octal, e.g., 660)

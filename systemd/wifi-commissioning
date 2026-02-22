@@ -1,0 +1,5 @@
+# /etc/default/wifi-commissioning
+# Configuration for wifi-commissioning-service
+
+# Wireless network interface to manage
+WIFI_INTERFACE=wlan0
