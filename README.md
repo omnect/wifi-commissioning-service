@@ -255,7 +255,7 @@ If you enable `systemd` it [notifies](https://www.freedesktop.org/software/syste
 
 The systemd service file `systemd/wifi-commissioning-service.service` uses the script `omnect_get_deviceid.sh` (see *-b* option), in order to supply the device ID. In the case the service is not used in combination with the *meta-omnect* layer, it has to be adapted accordingly.
 
-The WiFi interface is configured in `/etc/default/wifi-commissioning` (see `systemd/wifi-commissioning` for the default).
+The WiFi interface is configured in `/etc/omnect/wifi-commissioning-service.env` (see `systemd/wifi-commissioning-service.env` for the default).
 
 ### Socket Activation (Production)
 
