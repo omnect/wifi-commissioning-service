@@ -12,7 +12,7 @@ User=wifi_commissioning
 Group=wifi_commissioning
 
 EnvironmentFile=-/etc/omnect/wifi-commissioning-service.env
-ExecStart=/bin/bash -c '/usr/bin/wifi-commissioning-service $${WIFI_INTERFACE:+-i $${WIFI_INTERFACE}} -s $$(/usr/bin/omnect_get_deviceid.sh) --enable-unix-socket'
+ExecStart=/bin/bash -c '/usr/bin/wifi-commissioning-service $${WIFI_INTERFACE:+-i $${WIFI_INTERFACE}} -s $$(/usr/bin/omnect_get_deviceid.sh)'
 
 [Install]
 WantedBy=multi-user.target

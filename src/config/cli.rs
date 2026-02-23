@@ -18,12 +18,12 @@ pub struct CliArgs {
     #[arg(short = 's', long)]
     pub ble_secret: Option<String>,
 
-    /// Enable BLE transport (use --no-enable-ble to disable)
+    /// Enable BLE transport
     #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
     pub enable_ble: bool,
 
     /// Enable Unix socket transport
-    #[arg(long, default_value = "false", action = clap::ArgAction::SetTrue)]
+    #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
     pub enable_unix_socket: bool,
 
     /// Path for Unix socket

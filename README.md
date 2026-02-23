@@ -118,26 +118,28 @@ Options:
   -s, --ble-secret <SECRET>    Shared secret for BLE authorization (required for BLE)
       --ble-name <NAME>        BLE advertised device name [default: omnectWifiConfig]
       --enable-ble             Enable BLE transport [default: true]
-      --enable-unix-socket     Enable Unix socket transport [default: false]
+      --no-enable-ble          Disable BLE transport
+      --enable-unix-socket     Enable Unix socket transport [default: true]
+      --no-enable-unix-socket  Disable Unix socket transport
       --socket-path <PATH>     Unix socket path [default: /run/wifi-commissioning-service/api.sock]
       --socket-mode <MODE>     Socket permissions in octal [default: 660]
 ```
 
 ### Examples
 
-**BLE only (default):**
+**Both transports (default):**
 ```bash
 sudo ./wifi-commissioning-service -s "my-device-secret"
 ```
 
-**Unix socket only:**
+**BLE only:**
 ```bash
-sudo ./wifi-commissioning-service --no-enable-ble --enable-unix-socket
+sudo ./wifi-commissioning-service -s "my-device-secret" --no-enable-unix-socket
 ```
 
-**Both transports:**
+**Unix socket only:**
 ```bash
-sudo ./wifi-commissioning-service -s "my-device-secret" --enable-unix-socket
+sudo ./wifi-commissioning-service --no-enable-ble
 ```
 
 **Custom interface:**
@@ -289,7 +291,7 @@ sudo systemctl status wifi-commissioning-service.socket
 For testing without systemd, the service can create its own socket:
 
 ```bash
-sudo ./wifi-commissioning-service -i wlan0 -s "device-secret" --enable-unix-socket --socket-path /tmp/wifi.sock
+sudo ./wifi-commissioning-service -i wlan0 -s "device-secret" --socket-path /tmp/wifi.sock
 ```
 
 **Note:** Standalone mode is intended for testing and development only. In production, always use systemd socket activation.
