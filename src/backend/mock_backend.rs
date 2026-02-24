@@ -311,4 +311,38 @@ mod tests {
         let result = backend.remove_network("NonExistent").await;
         assert!(result.is_ok());
     }
+
+    #[tokio::test]
+    async fn test_mock_backend_remove_network_removes_all_duplicates() {
+        // Regression: wpa_supplicant can accumulate multiple entries for the same
+        // SSID from repeated connect attempts.  remove_network must remove every
+        // one of them, not just the first.
+        let backend = MockWifiBackend::new();
+        backend
+            .set_saved_networks(vec![
+                SavedNetwork {
+                    ssid: "H5N1".into(),
+                    flags: "".into(),
+                },
+                SavedNetwork {
+                    ssid: "H5N1".into(),
+                    flags: "".into(),
+                },
+                SavedNetwork {
+                    ssid: "H5N1".into(),
+                    flags: "[CURRENT]".into(),
+                },
+                SavedNetwork {
+                    ssid: "Office".into(),
+                    flags: "".into(),
+                },
+            ])
+            .await;
+
+        backend.remove_network("H5N1").await.unwrap();
+
+        let remaining = backend.list_networks().await.unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].ssid, "Office");
+    }
 }

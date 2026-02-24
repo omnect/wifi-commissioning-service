@@ -225,6 +225,10 @@ impl WifiBackend for WifiCtrlBackend {
 
     #[instrument(skip_all, fields(interface = %self.interface, ssid))]
     async fn connect(&self, ssid: &str, psk: &[u8; 32]) -> WifiResult<()> {
+        // Remove any pre-existing entries for this SSID to prevent duplicates
+        // accumulating from retries or previous failed attempts.
+        self.remove_network(ssid).await?;
+
         // Add network
         let network_id =
             self.client.add_network().await.map_err(|e| {
@@ -661,5 +665,21 @@ mod tests {
         let result = WifiCtrlBackend::parse_list_networks(output);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].1.flags, "");
+    }
+
+    #[test]
+    fn test_parse_list_networks_duplicate_ssid() {
+        // wpa_supplicant can accumulate multiple entries for the same SSID from
+        // repeated connect attempts (e.g. wrong PSK on the first try).
+        // parse_list_networks must return all of them so remove_network can
+        // clean up every orphan before adding a fresh entry.
+        let output =
+            "network id / ssid / bssid / flags\n0\tH5N1\tany\t\n1\tH5N1\tany\t\n2\tH5N1\tany\t[CURRENT]";
+        let result = WifiCtrlBackend::parse_list_networks(output);
+        assert_eq!(result.len(), 3);
+        assert!(result.iter().all(|(_, n)| n.ssid == "H5N1"));
+        // IDs must be preserved so each REMOVE_NETWORK call targets the right entry
+        let ids: Vec<u32> = result.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids, [0, 1, 2]);
     }
 }
