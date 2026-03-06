@@ -15,7 +15,7 @@ use crate::{
     protocol::{
         ConnectParams, ConnectResponse, DisconnectResponse, ForgetNetworkParams,
         ForgetNetworkResponse, SavedNetworksResponse, ScanResultsResponse, ScanStartedResponse,
-        StatusResponse,
+        StatusResponse, VersionResponse,
     },
 };
 
@@ -160,6 +160,12 @@ pub async fn forget_network<B: WifiBackend>(
     Ok(HttpResponse::Ok().json(ForgetNetworkResponse::ok()))
 }
 
+/// GET /api/v1/version — Get the service version
+pub async fn version() -> HttpResponse {
+    let version_info = env!("CARGO_PKG_VERSION").to_string();
+    HttpResponse::Ok().json(VersionResponse::ok(version_info))
+}
+
 /// Configure REST API routes for the given backend type
 pub fn configure_routes<B: WifiBackend>(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -170,7 +176,8 @@ pub fn configure_routes<B: WifiBackend>(cfg: &mut web::ServiceConfig) {
             .route("/disconnect", web::post().to(disconnect::<B>))
             .route("/status", web::get().to(status::<B>))
             .route("/networks", web::get().to(list_saved_networks::<B>))
-            .route("/networks/forget", web::post().to(forget_network::<B>)),
+            .route("/networks/forget", web::post().to(forget_network::<B>))
+            .route("/version", web::get().to(version)),
     );
 }
 
@@ -696,6 +703,22 @@ mod tests {
         let remaining = backend.list_networks().await.unwrap();
         assert_eq!(remaining.len(), 1);
         assert_eq!(remaining[0].ssid, "Office");
+    }
+
+    #[actix_web::test]
+    async fn test_version_endpoint() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service, net_service) = test_app(backend);
+
+        let app = init_test_app!(scan_service, connect_service, net_service);
+
+        let req = test::TestRequest::get().uri("/api/v1/version").to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
     }
 
     #[actix_web::test]

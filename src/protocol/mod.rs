@@ -10,5 +10,6 @@ pub use {
     response::{
         ConnectResponse, DisconnectResponse, ForgetNetworkResponse, Response,
         SavedNetworksResponse, ScanResultsResponse, ScanStartedResponse, StatusResponse,
+        VersionResponse,
     },
 };

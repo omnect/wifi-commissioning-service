@@ -209,6 +209,7 @@ The Unix socket transport exposes an HTTP REST API (via actix-web) over a Unix d
 | GET | `/api/v1/status` | Connection status | 200 |
 | GET | `/api/v1/networks` | List saved networks | 200 |
 | POST | `/api/v1/networks/forget` | Remove a saved network by SSID | 200 |
+| GET | `/api/v1/version` | Get service version | 200 |
 
 ### Error Responses
 
@@ -244,6 +245,9 @@ curl -X POST --unix-socket $SOCK \
 
 # Check status
 curl --unix-socket $SOCK http://localhost/api/v1/status
+
+# Get version
+curl --unix-socket $SOCK http://localhost/api/v1/version
 
 # Disconnect
 curl -X POST --unix-socket $SOCK http://localhost/api/v1/disconnect
@@ -324,6 +328,7 @@ cd examples/unix-socket-client
 ./wifi-client.sh list
 ./wifi-client.sh connect "MyNetwork" "0123456789abcdef..."
 ./wifi-client.sh status
+./wifi-client.sh version
 ./wifi-client.sh disconnect
 ./wifi-client.sh list-saved
 ./wifi-client.sh forget "MyNetwork"

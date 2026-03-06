@@ -673,8 +673,7 @@ mod tests {
         // repeated connect attempts (e.g. wrong PSK on the first try).
         // parse_list_networks must return all of them so remove_network can
         // clean up every orphan before adding a fresh entry.
-        let output =
-            "network id / ssid / bssid / flags\n0\tH5N1\tany\t\n1\tH5N1\tany\t\n2\tH5N1\tany\t[CURRENT]";
+        let output = "network id / ssid / bssid / flags\n0\tH5N1\tany\t\n1\tH5N1\tany\t\n2\tH5N1\tany\t[CURRENT]";
         let result = WifiCtrlBackend::parse_list_networks(output);
         assert_eq!(result.len(), 3);
         assert!(result.iter().all(|(_, n)| n.ssid == "H5N1"));

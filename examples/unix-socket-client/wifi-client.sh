@@ -24,6 +24,7 @@ Commands:
     connect <ssid> <psk>    Connect to WiFi network (PSK = 64 hex chars)
     disconnect              Disconnect from WiFi
     status                  Get connection status
+    version                 Get service version
     list-saved              List saved networks from wpa_supplicant config
     forget <ssid>           Remove a saved network by SSID
 
@@ -36,6 +37,7 @@ Examples:
     $0 connect "MyNetwork" "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     $0 disconnect
     $0 status
+    $0 version
     $0 list-saved
     $0 forget "MyNetwork"
 EOF
@@ -182,6 +184,16 @@ cmd_status() {
     fi
 }
 
+# Get service version
+cmd_version() {
+    echo -e "${GREEN}Fetching service version...${NC}"
+    check_socket
+    response=$(api_request GET "/version")
+
+    version=$(echo "$response" | jq -r '.version' 2>/dev/null)
+    echo -e "${GREEN}Version:${NC} $version"
+}
+
 # List saved networks from wpa_supplicant config
 cmd_list_saved() {
     echo -e "${GREEN}Fetching saved networks...${NC}"
@@ -236,6 +248,9 @@ case "${1:-}" in
         ;;
     status)
         cmd_status
+        ;;
+    version)
+        cmd_version
         ;;
     list-saved)
         cmd_list_saved

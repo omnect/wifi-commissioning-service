@@ -22,6 +22,9 @@ pub enum Response {
 
     /// Status response
     Status(StatusResponse),
+
+    /// Version response
+    Version(VersionResponse),
 }
 
 /// Response for scan request
@@ -72,6 +75,13 @@ pub struct SavedNetworksResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ForgetNetworkResponse {
     pub status: String,
+}
+
+/// Response for version request
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VersionResponse {
+    pub status: String,
+    pub version: String,
 }
 
 impl ScanStartedResponse {
@@ -137,6 +147,15 @@ impl ForgetNetworkResponse {
     }
 }
 
+impl VersionResponse {
+    pub fn ok(version: String) -> Self {
+        Self {
+            status: "ok".to_string(),
+            version,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,6 +205,17 @@ mod tests {
         let response = DisconnectResponse::ok();
         let json = serde_json::to_string(&response).unwrap();
         assert_eq!(json, r#"{"status":"ok"}"#);
+    }
+
+    #[test]
+    fn test_version_response() {
+        let response = VersionResponse::ok("1.0.0".to_string());
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains(r#""status":"ok""#));
+        assert!(json.contains(r#""version":"1.0.0""#));
+
+        let deserialized: VersionResponse = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, response);
     }
 
     #[test]

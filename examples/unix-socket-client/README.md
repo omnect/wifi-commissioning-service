@@ -21,6 +21,9 @@ The `wifi-client.sh` script provides a simple command-line interface:
 # Check connection status
 ./wifi-client.sh status
 
+# Get service version
+./wifi-client.sh version
+
 # Disconnect
 ./wifi-client.sh disconnect
 
@@ -53,6 +56,7 @@ The Unix socket transport serves an HTTP REST API. All responses are JSON.
 | POST | `/api/v1/connect` | Connect to network |
 | POST | `/api/v1/disconnect` | Disconnect |
 | GET | `/api/v1/status` | Connection status |
+| GET | `/api/v1/version` | Get service version |
 | GET | `/api/v1/networks` | List saved networks |
 | POST | `/api/v1/networks/forget` | Remove a saved network by SSID |
 
@@ -159,7 +163,22 @@ Response (200 OK):
 
 Possible states: `idle`, `connecting`, `connected`, `failed`
 
-### 5. Disconnect from Network
+### 5. Get Service Version
+
+```bash
+curl --unix-socket /run/wifi-commissioning-service/api.sock \
+  http://localhost/api/v1/version
+```
+
+Response (200 OK):
+```json
+{
+  "status": "ok",
+  "version": "0.1.0"
+}
+```
+
+### 6. Disconnect from Network
 
 ```bash
 curl -X POST --unix-socket /run/wifi-commissioning-service/api.sock \
@@ -173,7 +192,7 @@ Response (200 OK):
 }
 ```
 
-### 6. List Saved Networks
+### 7. List Saved Networks
 
 Returns all networks currently saved in `wpa_supplicant.conf`:
 
@@ -193,7 +212,7 @@ Response (200 OK):
 }
 ```
 
-### 7. Forget a Saved Network
+### 8. Forget a Saved Network
 
 Remove a network by SSID and persist the change. Idempotent — succeeds even if the SSID is not found.
 
