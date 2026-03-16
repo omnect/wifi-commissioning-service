@@ -18,3 +18,4 @@ CLAUDE.md
 setup-ai.sh
 .github/copilot-instructions.md
 GEMINI.md
+.user-context.md

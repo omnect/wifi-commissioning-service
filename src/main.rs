@@ -97,7 +97,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Notify systemd that the service is ready
     #[cfg(feature = "systemd")]
-    sd_notify::notify(false, &[sd_notify::NotifyState::Ready])?;
+    sd_notify::notify(&[sd_notify::NotifyState::Ready])?;
 
     // Wait for shutdown signal or fatal task failure
     tokio::select! {
