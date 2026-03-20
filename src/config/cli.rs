@@ -18,13 +18,13 @@ pub struct CliArgs {
     #[arg(short = 's', long)]
     pub ble_secret: Option<String>,
 
-    /// Enable BLE transport
-    #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
-    pub enable_ble: bool,
+    /// Disable BLE transport
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    pub disable_ble: bool,
 
-    /// Enable Unix socket transport
-    #[arg(long, default_value = "true", action = clap::ArgAction::Set)]
-    pub enable_unix_socket: bool,
+    /// Disable Unix socket transport
+    #[arg(long, action = clap::ArgAction::SetTrue)]
+    pub disable_unix_socket: bool,
 
     /// Path for Unix socket
     #[arg(long, default_value = "/run/wifi-commissioning-service/api.sock")]

@@ -32,12 +32,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(?args);
 
     // Validate configuration
-    if !args.enable_ble && !args.enable_unix_socket {
+    if args.disable_ble && args.disable_unix_socket {
         error!("At least one transport (BLE or Unix socket) must be enabled");
         return Err("No transport enabled".into());
     }
 
-    if args.enable_ble && args.ble_secret.is_none() {
+    if !args.disable_ble && args.ble_secret.is_none() {
         error!("BLE transport requires --ble-secret");
         return Err("BLE secret not provided".into());
     }
@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut transport_tasks = tokio::task::JoinSet::new();
 
     // Start Unix socket transport (actix-web REST API over UDS)
-    if args.enable_unix_socket {
+    if !args.disable_unix_socket {
         info!("Starting Unix socket transport on {}", args.socket_path);
 
         let handle =
@@ -72,7 +72,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Start BLE transport
-    if args.enable_ble {
+    if !args.disable_ble {
         info!("Starting BLE transport");
 
         match start_ble_transport(service.clone(), args.ble_name.clone()).await {
@@ -86,7 +86,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(e) => {
                 error!("Failed to start BLE transport: {}", e);
-                if !args.enable_unix_socket {
+                if args.disable_unix_socket {
                     return Err(e);
                 }
             }

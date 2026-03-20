@@ -21,8 +21,8 @@ impl From<CliArgs> for Settings {
         Settings {
             interface: args.interface,
             ble_secret: args.ble_secret,
-            enable_ble: args.enable_ble,
-            enable_unix_socket: args.enable_unix_socket,
+            enable_ble: !args.disable_ble,
+            enable_unix_socket: !args.disable_unix_socket,
             socket_path: args.socket_path,
             socket_mode,
         }

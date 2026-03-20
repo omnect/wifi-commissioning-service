@@ -1,7 +1,7 @@
 [Unit]
 Description=WiFi Commissioning Service (BLE GATT + Unix Socket)
-Requires=bluetooth.service bluetooth.target wifi-commissioning-service.socket
-After=bluetooth.service bluetooth.target wifi-commissioning-service.socket
+Requires=wifi-commissioning-service.socket
+After=wifi-commissioning-service.socket
 
 [Service]
 Type=notify
