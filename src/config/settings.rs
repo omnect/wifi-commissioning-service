@@ -6,6 +6,7 @@ use crate::config::CliArgs;
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub interface: String,
+    pub ble_name: String,
     pub ble_secret: Option<String>,
     pub enable_ble: bool,
     pub enable_unix_socket: bool,
@@ -18,12 +19,20 @@ impl From<CliArgs> for Settings {
         // Parse octal socket mode
         let socket_mode = u32::from_str_radix(&args.socket_mode, 8).unwrap_or(0o660);
 
+        let socket_path = args.socket_path.unwrap_or_else(|| {
+            format!(
+                "/run/wifi-commissioning-service/{}/api.sock",
+                args.interface
+            )
+        });
+
         Settings {
             interface: args.interface,
+            ble_name: args.ble_name,
             ble_secret: args.ble_secret,
             enable_ble: !args.disable_ble,
             enable_unix_socket: !args.disable_unix_socket,
-            socket_path: args.socket_path,
+            socket_path,
             socket_mode,
         }
     }

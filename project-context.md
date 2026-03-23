@@ -32,7 +32,7 @@
 - **Backend trait boundary:** All WiFi operations must go through `WifiBackend`. Never call `wifi-ctrl` or system interfaces directly from transport or core layers.
 - **"Atomic success" credential persistence:** Credentials are written to wpa_supplicant volatile config first; persisted to disk **only** after CTRL-EVENT-CONNECTED + IP assignment. Never persist before confirmed connection.
 - **100-byte BLE chunk protocol:** Scan results and network lists are chunked to 100-byte GATT reads. Any change to response serialisation must account for this limit.
-- **Socket path default:** `/run/wifi-commissioning-service/api.sock` — matches the systemd socket unit. Do not hardcode alternate paths.
+- **Socket path default:** `/run/wifi-commissioning-service/<interface>/api.sock` — derived from the interface name at runtime, matches the templated systemd socket unit. Do not hardcode alternate paths.
 
 ## 5. Local Dev Scripts
 

@@ -1,0 +1,16 @@
+[Unit]
+Description=WiFi Commissioning Service Unix Socket for %I
+PartOf=wifi-commissioning-service@%i.service
+
+[Socket]
+RuntimeDirectory=wifi-commissioning-service/%i
+RuntimeDirectoryPreserve=yes
+ListenStream=/run/wifi-commissioning-service/%i/api.sock
+SocketMode=0660
+SocketUser=wifi_commissioning
+SocketGroup=wpa_supplicant
+ExecStartPre=+rm -f /run/wifi-commissioning-service/%i/api.sock
+ExecStopPost=+rm -f /run/wifi-commissioning-service/%i/api.sock
+
+[Install]
+WantedBy=sockets.target

@@ -26,9 +26,9 @@ pub struct CliArgs {
     #[arg(long, action = clap::ArgAction::SetTrue)]
     pub disable_unix_socket: bool,
 
-    /// Path for Unix socket
-    #[arg(long, default_value = "/run/wifi-commissioning-service/api.sock")]
-    pub socket_path: String,
+    /// Path for Unix socket (default: /run/wifi-commissioning-service/<interface>/api.sock)
+    #[arg(long)]
+    pub socket_path: Option<String>,
 
     /// Socket file permissions (octal, e.g., 660)
     #[arg(long, default_value = "660")]

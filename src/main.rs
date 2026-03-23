@@ -6,7 +6,9 @@ use clap::Parser;
 use tracing::{Instrument, error, info, info_span};
 use tracing_subscriber::{fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt};
 use wifi_commissioning_service::{
-    backend::WifiCtrlBackend, config::CliArgs, core::service::WifiCommissioningService,
+    backend::WifiCtrlBackend,
+    config::{CliArgs, Settings},
+    core::service::WifiCommissioningService,
     transport::ble::BleAdapter,
 };
 
@@ -27,28 +29,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "Starting WiFi commissioning service"
     );
 
-    // Parse CLI arguments
+    // Parse CLI arguments and resolve settings
     let args = CliArgs::parse();
     info!(?args);
+    let settings: Settings = args.into();
+    info!(?settings);
 
     // Validate configuration
-    if args.disable_ble && args.disable_unix_socket {
+    if !settings.enable_ble && !settings.enable_unix_socket {
         error!("At least one transport (BLE or Unix socket) must be enabled");
         return Err("No transport enabled".into());
     }
 
-    if !args.disable_ble && args.ble_secret.is_none() {
+    if settings.enable_ble && settings.ble_secret.is_none() {
         error!("BLE transport requires --ble-secret");
         return Err("BLE secret not provided".into());
     }
 
     // Create WiFi backend
-    let (backend, station_handle) = WifiCtrlBackend::new(args.interface.clone()).await?;
+    let (backend, station_handle) = WifiCtrlBackend::new(settings.interface.clone()).await?;
     let backend = Arc::new(backend);
-    info!("WiFi backend initialized for interface: {}", args.interface);
+    info!(
+        "WiFi backend initialized for interface: {}",
+        settings.interface
+    );
 
     // Create WiFi commissioning service
-    let secret = args
+    let secret = settings
         .ble_secret
         .clone()
         .unwrap_or_else(|| "default".to_string());
@@ -59,11 +66,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut transport_tasks = tokio::task::JoinSet::new();
 
     // Start Unix socket transport (actix-web REST API over UDS)
-    if !args.disable_unix_socket {
-        info!("Starting Unix socket transport on {}", args.socket_path);
+    if settings.enable_unix_socket {
+        info!("Starting Unix socket transport on {}", settings.socket_path);
 
-        let handle =
-            start_unix_socket_transport(&args.socket_path, &args.interface, service.clone())?;
+        let handle = start_unix_socket_transport(
+            &settings.socket_path,
+            &settings.interface,
+            service.clone(),
+        )?;
         transport_tasks.spawn(async move {
             handle
                 .await
@@ -72,10 +82,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Start BLE transport
-    if !args.disable_ble {
+    if settings.enable_ble {
         info!("Starting BLE transport");
 
-        match start_ble_transport(service.clone(), args.ble_name.clone()).await {
+        match start_ble_transport(service.clone(), settings.ble_name.clone()).await {
             Ok(handle) => {
                 transport_tasks.spawn(async move {
                     handle
@@ -86,7 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             Err(e) => {
                 error!("Failed to start BLE transport: {}", e);
-                if args.disable_unix_socket {
+                if !settings.enable_unix_socket {
                     return Err(e);
                 }
             }

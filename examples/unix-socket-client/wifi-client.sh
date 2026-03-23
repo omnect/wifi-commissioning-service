@@ -2,9 +2,9 @@
 # WiFi Commissioning Unix Socket Client
 # REST API client for testing the Unix socket transport
 
-set -e
+set -euo pipefail
 
-SOCKET_PATH="${WIFI_SOCKET_PATH:-/run/wifi-commissioning-service/api.sock}"
+SOCKET_PATH="${WIFI_SOCKET_PATH:-/run/wifi-commissioning-service/wlan0/api.sock}"
 BASE_URL="http://localhost/api/v1"
 
 # Colors for output
@@ -29,7 +29,7 @@ Commands:
     forget <ssid>           Remove a saved network by SSID
 
 Environment:
-    WIFI_SOCKET_PATH    Path to Unix socket (default: /run/wifi-commissioning-service/api.sock)
+    WIFI_SOCKET_PATH    Path to Unix socket (default: /run/wifi-commissioning-service/wlan0/api.sock)
 
 Examples:
     $0 scan

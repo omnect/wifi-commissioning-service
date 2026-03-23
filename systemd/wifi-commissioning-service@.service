@@ -1,0 +1,20 @@
+[Unit]
+Description=WiFi Commissioning Service (BLE GATT + Unix Socket) for %I
+Requires=wifi-commissioning-service@%i.socket wpa_supplicant@%i.service
+After=wifi-commissioning-service@%i.socket wpa_supplicant@%i.service
+Wants=bluetooth.service
+After=bluetooth.service
+
+[Service]
+Type=notify
+Restart=on-failure
+RestartSec=5
+
+User=wifi_commissioning
+Group=wifi_commissioning
+
+EnvironmentFile=-/etc/omnect/wifi-commissioning-service.env
+ExecStart=/bin/bash -c '/usr/bin/wifi-commissioning-service -i %I -s $$(/usr/bin/omnect_get_deviceid.sh)'
+
+[Install]
+WantedBy=multi-user.target

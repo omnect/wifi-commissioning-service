@@ -34,7 +34,7 @@ The `wifi-client.sh` script provides a simple command-line interface:
 ./wifi-client.sh forget "MyNetwork"
 ```
 
-By default, the script uses `/run/wifi-commissioning-service/api.sock`. Override with:
+By default, the script uses `/run/wifi-commissioning-service/wlan0/api.sock`. Override with:
 ```bash
 WIFI_SOCKET_PATH=/tmp/wifi.sock ./wifi-client.sh scan
 ```
@@ -65,7 +65,7 @@ The Unix socket transport serves an HTTP REST API. All responses are JSON.
 ### 1. Start WiFi Scan
 
 ```bash
-curl -X POST --unix-socket /run/wifi-commissioning-service/api.sock \
+curl -X POST --unix-socket /run/wifi-commissioning-service/wlan0/api.sock \
   http://localhost/api/v1/scan
 ```
 
@@ -80,7 +80,7 @@ Response (202 Accepted):
 ### 2. Get Scan Results
 
 ```bash
-curl --unix-socket /run/wifi-commissioning-service/api.sock \
+curl --unix-socket /run/wifi-commissioning-service/wlan0/api.sock \
   http://localhost/api/v1/scan/results
 ```
 
@@ -117,7 +117,7 @@ Response (200 OK) — scan in progress:
 
 Pretty-print with `jq`:
 ```bash
-curl -s --unix-socket /run/wifi-commissioning-service/api.sock \
+curl -s --unix-socket /run/wifi-commissioning-service/wlan0/api.sock \
   http://localhost/api/v1/scan/results | jq '.networks[] | {ssid, rssi, channel}'
 ```
 
@@ -126,7 +126,7 @@ curl -s --unix-socket /run/wifi-commissioning-service/api.sock \
 Connect to a network with SSID and pre-shared key (64 hex characters):
 
 ```bash
-curl -X POST --unix-socket /run/wifi-commissioning-service/api.sock \
+curl -X POST --unix-socket /run/wifi-commissioning-service/wlan0/api.sock \
   -H "Content-Type: application/json" \
   -d '{
     "ssid": "MyNetwork",
@@ -146,7 +146,7 @@ Response (202 Accepted):
 ### 4. Check Connection Status
 
 ```bash
-curl --unix-socket /run/wifi-commissioning-service/api.sock \
+curl --unix-socket /run/wifi-commissioning-service/wlan0/api.sock \
   http://localhost/api/v1/status
 ```
 
@@ -166,7 +166,7 @@ Possible states: `idle`, `connecting`, `connected`, `failed`
 ### 5. Get Service Version
 
 ```bash
-curl --unix-socket /run/wifi-commissioning-service/api.sock \
+curl --unix-socket /run/wifi-commissioning-service/wlan0/api.sock \
   http://localhost/api/v1/version
 ```
 
@@ -181,7 +181,7 @@ Response (200 OK):
 ### 6. Disconnect from Network
 
 ```bash
-curl -X POST --unix-socket /run/wifi-commissioning-service/api.sock \
+curl -X POST --unix-socket /run/wifi-commissioning-service/wlan0/api.sock \
   http://localhost/api/v1/disconnect
 ```
 
@@ -197,7 +197,7 @@ Response (200 OK):
 Returns all networks currently saved in `wpa_supplicant.conf`:
 
 ```bash
-curl --unix-socket /run/wifi-commissioning-service/api.sock \
+curl --unix-socket /run/wifi-commissioning-service/wlan0/api.sock \
   http://localhost/api/v1/networks
 ```
 
@@ -217,7 +217,7 @@ Response (200 OK):
 Remove a network by SSID and persist the change. Idempotent — succeeds even if the SSID is not found.
 
 ```bash
-curl -X POST --unix-socket /run/wifi-commissioning-service/api.sock \
+curl -X POST --unix-socket /run/wifi-commissioning-service/wlan0/api.sock \
   -H "Content-Type: application/json" \
   -d '{"ssid": "OldNetwork"}' \
   http://localhost/api/v1/networks/forget
@@ -232,7 +232,7 @@ Response (200 OK):
 
 Typical re-commissioning workflow:
 ```bash
-SOCK=/run/wifi-commissioning-service/api.sock
+SOCK=/run/wifi-commissioning-service/wlan0/api.sock
 
 # 1. Inspect what is saved
 curl -s --unix-socket $SOCK http://localhost/api/v1/networks | jq '.'
@@ -272,7 +272,7 @@ Example error response (409 Conflict):
 ## Complete Workflow Example
 
 ```bash
-SOCK=/run/wifi-commissioning-service/api.sock
+SOCK=/run/wifi-commissioning-service/wlan0/api.sock
 
 # 1. Start scan
 curl -s -X POST --unix-socket $SOCK http://localhost/api/v1/scan
@@ -306,7 +306,7 @@ curl -s --unix-socket $SOCK http://localhost/api/v1/status | jq '.'
 In production, systemd manages the socket at a fixed path:
 
 ```
-/run/wifi-commissioning-service/api.sock
+/run/wifi-commissioning-service/wlan0/api.sock
 ```
 
 The service automatically detects and uses the systemd-provided socket.
@@ -317,10 +317,10 @@ For testing without systemd, the service creates its own socket:
 
 ```bash
 # Default location (standalone)
-wifi-commissioning-service -i wlan0 -s "secret" --enable-unix-socket --socket-path /tmp/wifi.sock
+wifi-commissioning-service -i wlan0 -s "secret" --socket-path /tmp/wifi.sock
 
 # Custom location
-wifi-commissioning-service -i wlan0 -s "secret" --enable-unix-socket --socket-path /tmp/custom.sock
+wifi-commissioning-service -i wlan0 -s "secret" --socket-path /tmp/custom.sock
 ```
 
 **Note:** Standalone mode is for testing only. Production deployments should use systemd socket activation.
@@ -329,9 +329,9 @@ wifi-commissioning-service -i wlan0 -s "secret" --enable-unix-socket --socket-pa
 
 **"Couldn't connect to server"**
 
-- Check the service is running: `systemctl status wifi-commissioning-service`
-- Check the socket is active: `systemctl status wifi-commissioning-service.socket`
-- Verify socket exists: `ls -l /run/wifi-commissioning-service/api.sock`
+- Check the service is running: `systemctl status wifi-commissioning-service@wlan0`
+- Check the socket is active: `systemctl status wifi-commissioning-service@wlan0.socket`
+- Verify socket exists: `ls -l /run/wifi-commissioning-service/wlan0/api.sock`
 - Check permissions on the socket file
 
 **"Permission denied"**
@@ -344,7 +344,7 @@ Process multiple requests in a script:
 
 ```bash
 #!/bin/bash
-SOCK="/run/wifi-commissioning-service/api.sock"
+SOCK="/run/wifi-commissioning-service/wlan0/api.sock"
 URL="http://localhost/api/v1"
 
 # Scan and wait
