@@ -344,9 +344,6 @@ impl WifiBackend for WifiCtrlBackend {
     #[instrument(skip_all, fields(interface = %self.interface))]
     async fn disconnect(&self) -> WifiResult<()> {
         debug!("Disconnecting");
-        // wifi-ctrl doesn't have explicit disconnect?
-        // We can remove all networks?
-        // Or send custom "DISCONNECT"
 
         self.client
             .send_custom("DISCONNECT".to_string())

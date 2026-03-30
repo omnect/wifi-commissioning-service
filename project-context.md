@@ -7,7 +7,7 @@
 
 ## 2. Architecture & Tech Stack
 
-- **Language / Runtime:** Rust 2024 edition (requires nightly toolchain, pinned to 1.93.0 via `rust-toolchain.toml`)
+- **Language / Runtime:** Rust 2024 edition (toolchain pinned to 1.93.0 via `rust-toolchain.toml`)
 - **Key Frameworks:** `tokio` (async runtime), `actix-web` 4 (HTTP/UDS server), `bluer` (BLE via bluetoothd), `wifi-ctrl` (wpa_supplicant control interface)
 - **Notable Dependencies:** `listenfd` (systemd socket activation), `sd-notify` (feature-gated `systemd`), `sha3` + `subtle` (constant-time auth), `thiserror` 2.0, `clap` 4 (derive API)
 
@@ -21,12 +21,11 @@
 - `src/transport/unix_socket/handlers.rs` — REST endpoint handlers; all UDS routes
 - `src/transport/ble/characteristics.rs` — all GATT characteristic handlers
 - `src/transport/ble/uuids.rs` — UUID constants; update here when adding characteristics
-- `systemd/wifi-commissioning-service.{service,socket}` — service + socket activation units
+- `systemd/wifi-commissioning-service@.{service,socket}` — templated service + socket activation units
 - `examples/unix-socket-client/wifi-client.sh` — manual API test script
 
 ## 4. Repository-Specific Constraints
 
-- **Nightly Rust only:** Edition 2024 requires nightly. Toolchain is pinned; do not change it.
 - **Single feature flag:** `systemd` gates `sd-notify` readiness notification. No other feature flags exist; do not add them without discussion.
 - **Inline tests only:** All tests live in `#[cfg(test)]` blocks inside source modules. There is no top-level `tests/` directory. Keep this pattern.
 - **Backend trait boundary:** All WiFi operations must go through `WifiBackend`. Never call `wifi-ctrl` or system interfaces directly from transport or core layers.

@@ -1,5 +1,5 @@
 [package]
-authors = ["jan.zachmann@conplement.de"]
+authors = ["omnect@conplement.de"]
 description = "WiFi commissioning service with BLE GATT and Unix socket interfaces"
 edition = "2024"
 homepage = "https://www.omnect.io/home"

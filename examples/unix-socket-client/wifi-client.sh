@@ -241,7 +241,7 @@ case "${1:-}" in
         cmd_list
         ;;
     connect)
-        cmd_connect "$2" "$3"
+        cmd_connect "${2:-}" "${3:-}"
         ;;
     disconnect)
         cmd_disconnect
@@ -256,7 +256,7 @@ case "${1:-}" in
         cmd_list_saved
         ;;
     forget)
-        cmd_forget "$2"
+        cmd_forget "${2:-}"
         ;;
     -h|--help|help|"")
         usage

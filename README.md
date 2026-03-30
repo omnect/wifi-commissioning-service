@@ -75,7 +75,7 @@ src/
 
 ### Requirements
 
-- Rust 2024 edition (nightly)
+- Rust 2024 edition
 - `libdbus-1-dev` (for BLE support)
 - `wpa_supplicant` running on target interface
 
@@ -110,17 +110,8 @@ cargo fmt && cargo clippy --all-targets && cargo test
 
 ### Command-Line Options
 
-```
-wifi-commissioning-service [OPTIONS]
-
-Options:
-  -i, --interface <NAME>       Network interface [default: wlan0]
-  -s, --ble-secret <SECRET>    Shared secret for BLE authorization (required for BLE)
-      --ble-name <NAME>        BLE advertised device name [default: omnectWifiConfig]
-      --disable-ble            Disable BLE transport
-      --disable-unix-socket    Disable Unix socket transport
-      --socket-path <PATH>     Unix socket path [default: /run/wifi-commissioning-service/<interface>/api.sock]
-      --socket-mode <MODE>     Socket permissions in octal [default: 660]
+```bash
+wifi-commissioning-service --help
 ```
 
 ### Examples
@@ -386,6 +377,6 @@ Unless you explicitly state otherwise, any contribution intentionally submitted 
 
 ---
 
-copyright (c) 2021 conplement AG
+copyright (c) 2026 conplement AG
 
 Content published under the Apache License Version 2.0 or MIT license, are marked as such. They may be used in accordance with the stated license conditions.

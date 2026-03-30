@@ -14,7 +14,9 @@ User=wifi_commissioning
 Group=wifi_commissioning
 
 EnvironmentFile=-/etc/omnect/wifi-commissioning-service.env
-ExecStart=/bin/bash -c '/usr/bin/wifi-commissioning-service -i %I -s $$(/usr/bin/omnect_get_deviceid.sh)'
+ExecStartPre=/bin/sh -c 'echo DEVICE_ID=$$(/usr/bin/omnect_get_deviceid.sh) > /run/wifi-commissioning-service/%i/device_id.env'
+EnvironmentFile=/run/wifi-commissioning-service/%i/device_id.env
+ExecStart=/usr/bin/wifi-commissioning-service -i %I -s ${DEVICE_ID}
 
 [Install]
 WantedBy=multi-user.target
