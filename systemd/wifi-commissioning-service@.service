@@ -2,7 +2,8 @@
 Description=WiFi Commissioning Service (BLE GATT + Unix Socket) for %I
 Requires=wifi-commissioning-service@%i.socket wpa_supplicant@%i.service
 After=wifi-commissioning-service@%i.socket wpa_supplicant@%i.service
-Wants=bluetooth.service
+# bluetooth dependency kept on separate lines for conditional removal by recipe
+Requires=bluetooth.service
 After=bluetooth.service
 
 [Service]
@@ -12,6 +13,7 @@ RestartSec=5
 
 User=wifi_commissioning
 Group=wifi_commissioning
+SupplementaryGroups=wpa_supplicant
 
 EnvironmentFile=-/etc/omnect/wifi-commissioning-service.env
 ExecStartPre=/bin/sh -c 'echo DEVICE_ID=$$(/usr/bin/omnect_get_deviceid.sh) > /run/wifi-commissioning-service/%i/device_id.env'

@@ -7,7 +7,7 @@ RuntimeDirectory=wifi-commissioning-service/%i
 ListenStream=/run/wifi-commissioning-service/%i/api.sock
 SocketMode=0660
 SocketUser=wifi_commissioning
-SocketGroup=wpa_supplicant
+SocketGroup=omnect_device_service_client
 ExecStartPre=rm -f /run/wifi-commissioning-service/%i/api.sock
 ExecStopPost=rm -f /run/wifi-commissioning-service/%i/api.sock
 
