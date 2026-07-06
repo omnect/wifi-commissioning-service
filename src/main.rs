@@ -1,6 +1,7 @@
 //! WiFi Commissioning Service - Main Entry Point
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use clap::Parser;
 use tracing::{Instrument, error, info, info_span};
@@ -65,6 +66,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start configured transports — any task exiting is fatal
     let mut transport_tasks = tokio::task::JoinSet::new();
 
+    let ble_live = Arc::new(AtomicBool::new(false));
+
     // Start Unix socket transport (actix-web REST API over UDS)
     if settings.enable_unix_socket {
         info!("Starting Unix socket transport on {}", settings.socket_path);
@@ -72,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let handle = start_unix_socket_transport(
             &settings.socket_path,
             &settings.interface,
-            settings.enable_ble,
+            ble_live.clone(),
             service.clone(),
         )?;
         transport_tasks.spawn(async move {
@@ -88,6 +91,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         match start_ble_transport(service.clone(), settings.ble_name.clone()).await {
             Ok(handle) => {
+                ble_live.store(true, Ordering::Relaxed);
                 transport_tasks.spawn(async move {
                     handle
                         .await
@@ -174,7 +178,7 @@ async fn shutdown_signal() {
 fn start_unix_socket_transport(
     socket_path: &str,
     interface_name: &str,
-    ble_enabled: bool,
+    ble_live: Arc<AtomicBool>,
     service: Arc<WifiCommissioningService<WifiCtrlBackend>>,
 ) -> Result<tokio::task::JoinHandle<Result<(), String>>, Box<dyn std::error::Error>> {
     use wifi_commissioning_service::transport::unix_socket::server;
@@ -182,7 +186,7 @@ fn start_unix_socket_transport(
     let srv = server::create(
         socket_path,
         interface_name,
-        ble_enabled,
+        ble_live,
         service.scanner.clone(),
         service.connector.clone(),
         service.net_management.clone(),

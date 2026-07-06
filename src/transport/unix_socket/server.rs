@@ -2,6 +2,7 @@
 
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 
 use actix_web::{App, HttpServer, dev::Server, web};
 use tracing::info;
@@ -25,7 +26,7 @@ use crate::{
 pub fn create<B: WifiBackend>(
     socket_path: &str,
     interface_name: &str,
-    ble_enabled: bool,
+    ble_live: Arc<AtomicBool>,
     scan_service: Arc<ScanService<B>>,
     connect_service: Arc<ConnectionService<B>>,
     net_mgmt_service: Arc<NetworkManagementService<B>>,
@@ -34,7 +35,7 @@ pub fn create<B: WifiBackend>(
     let conn_data = web::Data::new(connect_service);
     let net_data = web::Data::new(net_mgmt_service);
     let iface_data = web::Data::new(InterfaceName(interface_name.to_string()));
-    let ble_data = web::Data::new(BleEnabled(ble_enabled));
+    let ble_data = web::Data::new(BleEnabled(ble_live));
 
     let server = HttpServer::new(move || {
         App::new()

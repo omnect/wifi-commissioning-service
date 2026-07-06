@@ -65,9 +65,8 @@ pub struct VersionResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ServiceInfoResponse {
     pub status: String,
-    /// Reflects the configured intent (`settings.enable_ble`), not live BLE
-    /// runtime state: it can be `true` even if the BLE adapter later failed to
-    /// start while the Unix socket transport kept running.
+    /// Live BLE transport state: `true` once BLE is up, `false` if BLE is
+    /// disabled or failed to start.
     pub ble_enabled: bool,
     pub interface_name: String,
     pub version: String,
