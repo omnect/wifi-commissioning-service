@@ -205,7 +205,7 @@ The `service-info` response reports whether BLE provisioning is enabled for this
 instance:
 
 ```json
-{ "status": "ok", "ble_enabled": true, "interface_name": "wlan0", "version": "0.2.0" }
+{ "status": "ok", "ble_enabled": true, "interface_name": "wlan0", "version": "<crate version>" }
 ```
 
 ### Error Responses

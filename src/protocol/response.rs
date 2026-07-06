@@ -4,32 +4,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::types::{ConnectionState, ConnectionStatus, SavedNetwork, ScanState, WifiNetwork};
 
-/// Response messages from server to client
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(untagged)]
-pub enum Response {
-    /// Scan started response
-    ScanStarted(ScanStartedResponse),
-
-    /// Scan results response
-    ScanResults(ScanResultsResponse),
-
-    /// Connect response
-    Connect(ConnectResponse),
-
-    /// Disconnect response
-    Disconnect(DisconnectResponse),
-
-    /// Status response
-    Status(StatusResponse),
-
-    /// Version response
-    Version(VersionResponse),
-
-    /// Service info response
-    ServiceInfo(ServiceInfoResponse),
-}
-
 /// Response for scan request
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ScanStartedResponse {
@@ -87,10 +61,13 @@ pub struct VersionResponse {
     pub version: String,
 }
 
-/// Response for get_service_info request
+/// Response for service-info request
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ServiceInfoResponse {
     pub status: String,
+    /// Reflects the configured intent (`settings.enable_ble`), not live BLE
+    /// runtime state: it can be `true` even if the BLE adapter later failed to
+    /// start while the Unix socket transport kept running.
     pub ble_enabled: bool,
     pub interface_name: String,
     pub version: String,

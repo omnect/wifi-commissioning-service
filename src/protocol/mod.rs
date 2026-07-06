@@ -8,8 +8,8 @@ pub use {
     notification::{ConnectionStateChangedParams, Notification, ScanStateChangedParams},
     request::{ConnectParams, ForgetNetworkParams},
     response::{
-        ConnectResponse, DisconnectResponse, ForgetNetworkResponse, Response,
-        SavedNetworksResponse, ScanResultsResponse, ScanStartedResponse, ServiceInfoResponse,
-        StatusResponse, VersionResponse,
+        ConnectResponse, DisconnectResponse, ForgetNetworkResponse, SavedNetworksResponse,
+        ScanResultsResponse, ScanStartedResponse, ServiceInfoResponse, StatusResponse,
+        VersionResponse,
     },
 };
