@@ -17,28 +17,28 @@ name = "wifi_commissioning_service"
 path = "src/lib.rs"
 
 [dependencies]
-actix-web = { version = "4.12", default-features = false, features = ["macros"] }
+actix-web = { version = "4.14", default-features = false, features = ["macros"] }
 bluer = { version = "0.17", default-features = false, features = ["bluetoothd"] }
-clap = { version = "4.5", default-features = false, features = ["derive", "std"] }
+clap = { version = "4.6", default-features = false, features = ["derive", "std"] }
 futures = { version = "0.3", default-features = false }
 hex = { version = "0.4", default-features = false, features = ["alloc"] }
 listenfd = { version = "1.0", default-features = false }
 sd-notify = { version = "0.5", default-features = false, optional = true }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc"] }
 serde_json = { version = "1.0", default-features = false, features = ["std"] }
-sha3 = { version = "0.10", default-features = false }
+sha3 = { version = "0.12", default-features = false }
 subtle = { version = "2.6", default-features = false }
 thiserror = { version = "2.0", default-features = false }
-tokio = { version = "1.49", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process", "signal", "fs"] }
+tokio = { version = "1.52", default-features = false, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process", "signal", "fs"] }
 tracing = { version = "0.1", default-features = false }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "fmt", "std", "registry"] }
 trait-variant = { version = "0.1", default-features = false }
-uuid = { version = "1.20", default-features = false, features = ["v4", "serde"] }
+uuid = { version = "1.23", default-features = false, features = ["v4", "serde"] }
 wifi-ctrl = { version = "0.2", default-features = false }
 
 [dev-dependencies]
-pretty_assertions = { version = "1.0", default-features = false, features = ["std"] }
-tempfile = { version = "3.25", default-features = false }
+pretty_assertions = { version = "1.4", default-features = false, features = ["std"] }
+tempfile = { version = "3.27", default-features = false }
 tokio-test = { version = "0.4", default-features = false }
 
 [features]
