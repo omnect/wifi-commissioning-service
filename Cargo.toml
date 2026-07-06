@@ -6,7 +6,7 @@ homepage = "https://www.omnect.io/home"
 license = "MIT OR Apache-2.0"
 name = "wifi-commissioning-service"
 repository = "https://github.com/omnect/wifi-commissioning-service"
-version = "0.1.0"
+version = "0.2.0"
 
 [[bin]]
 name = "wifi-commissioning-service"

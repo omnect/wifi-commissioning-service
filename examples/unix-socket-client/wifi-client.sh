@@ -25,6 +25,7 @@ Commands:
     disconnect              Disconnect from WiFi
     status                  Get connection status
     version                 Get service version
+    service-info            Get service capabilities (BLE enabled, iface, version)
     list-saved              List saved networks from wpa_supplicant config
     forget <ssid>           Remove a saved network by SSID
 
@@ -38,6 +39,7 @@ Examples:
     $0 disconnect
     $0 status
     $0 version
+    $0 service-info
     $0 list-saved
     $0 forget "MyNetwork"
 EOF
@@ -194,6 +196,22 @@ cmd_version() {
     echo -e "${GREEN}Version:${NC} $version"
 }
 
+# Get service info (is BLE provisioning enabled?)
+cmd_service_info() {
+    echo -e "${GREEN}Fetching service info...${NC}"
+    check_socket
+    response=$(api_request GET "/service-info")
+
+    ble_enabled=$(echo "$response" | jq -r '.ble_enabled' 2>/dev/null)
+    iface=$(echo "$response" | jq -r '.interface_name' 2>/dev/null)
+    version=$(echo "$response" | jq -r '.version' 2>/dev/null)
+
+    echo -e "${GREEN}Service info:${NC}"
+    echo "  Interface:   $iface"
+    echo "  BLE enabled: $ble_enabled"
+    echo "  Version:     $version"
+}
+
 # List saved networks from wpa_supplicant config
 cmd_list_saved() {
     echo -e "${GREEN}Fetching saved networks...${NC}"
@@ -251,6 +269,9 @@ case "${1:-}" in
         ;;
     version)
         cmd_version
+        ;;
+    service-info)
+        cmd_service_info
         ;;
     list-saved)
         cmd_list_saved

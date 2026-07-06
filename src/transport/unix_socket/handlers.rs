@@ -15,12 +15,15 @@ use crate::{
     protocol::{
         ConnectParams, ConnectResponse, DisconnectResponse, ForgetNetworkParams,
         ForgetNetworkResponse, SavedNetworksResponse, ScanResultsResponse, ScanStartedResponse,
-        StatusResponse, VersionResponse,
+        ServiceInfoResponse, StatusResponse, VersionResponse,
     },
 };
 
 /// Newtype for the WiFi interface name, used as actix-web app data
 pub struct InterfaceName(pub String);
+
+/// Whether BLE provisioning is enabled for this instance (actix app data)
+pub struct BleEnabled(pub bool);
 
 /// JSON error response body
 #[derive(Debug, Serialize)]
@@ -166,6 +169,18 @@ pub async fn version() -> HttpResponse {
     HttpResponse::Ok().json(VersionResponse::ok(version_info))
 }
 
+/// GET /api/v1/service-info — Report service capabilities (BLE enabled, iface, version)
+pub async fn service_info(
+    ble_enabled: web::Data<BleEnabled>,
+    interface_name: web::Data<InterfaceName>,
+) -> HttpResponse {
+    HttpResponse::Ok().json(ServiceInfoResponse::ok(
+        ble_enabled.0,
+        &interface_name.0,
+        env!("CARGO_PKG_VERSION"),
+    ))
+}
+
 /// Configure REST API routes for the given backend type
 pub fn configure_routes<B: WifiBackend>(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -177,7 +192,8 @@ pub fn configure_routes<B: WifiBackend>(cfg: &mut web::ServiceConfig) {
             .route("/status", web::get().to(status::<B>))
             .route("/networks", web::get().to(list_saved_networks::<B>))
             .route("/networks/forget", web::post().to(forget_network::<B>))
-            .route("/version", web::get().to(version)),
+            .route("/version", web::get().to(version))
+            .route("/service-info", web::get().to(service_info)),
     );
 }
 
@@ -201,8 +217,14 @@ mod tests {
     const TEST_INTERFACE_NAME: &str = "wlan0";
 
     /// Initialize an actix-web test service with scan, connect, and net-management routes.
+    ///
+    /// The three-arg form defaults BLE to enabled; the four-arg form takes an explicit
+    /// `ble_enabled` bool for the `/service-info` endpoint.
     macro_rules! init_test_app {
         ($scan:expr, $connect:expr, $net:expr) => {
+            init_test_app!($scan, $connect, $net, true)
+        };
+        ($scan:expr, $connect:expr, $net:expr, $ble_enabled:expr) => {
             test::init_service(
                 App::new()
                     .app_data(web::Data::new($scan.clone()))
@@ -211,6 +233,7 @@ mod tests {
                     .app_data(web::Data::new(InterfaceName(
                         TEST_INTERFACE_NAME.to_string(),
                     )))
+                    .app_data(web::Data::new(BleEnabled($ble_enabled)))
                     .configure(configure_routes::<MockWifiBackend>),
             )
             .await
@@ -718,6 +741,46 @@ mod tests {
 
         let body: serde_json::Value = test::read_body_json(resp).await;
         assert_eq!(body["status"], "ok");
+        assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
+    }
+
+    #[actix_web::test]
+    async fn test_service_info_ble_enabled() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service, net_service) = test_app(backend);
+
+        let app = init_test_app!(scan_service, connect_service, net_service, true);
+
+        let req = test::TestRequest::get()
+            .uri("/api/v1/service-info")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["ble_enabled"], true);
+        assert_eq!(body["interface_name"], TEST_INTERFACE_NAME);
+        assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
+    }
+
+    #[actix_web::test]
+    async fn test_service_info_ble_disabled() {
+        let backend = Arc::new(MockWifiBackend::new());
+        let (scan_service, connect_service, net_service) = test_app(backend);
+
+        let app = init_test_app!(scan_service, connect_service, net_service, false);
+
+        let req = test::TestRequest::get()
+            .uri("/api/v1/service-info")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["status"], "ok");
+        assert_eq!(body["ble_enabled"], false);
+        assert_eq!(body["interface_name"], TEST_INTERFACE_NAME);
         assert_eq!(body["version"], env!("CARGO_PKG_VERSION"));
     }
 

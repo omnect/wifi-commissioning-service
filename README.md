@@ -199,6 +199,14 @@ The Unix socket transport exposes an HTTP REST API (via actix-web) over a Unix d
 | GET | `/api/v1/networks` | List saved networks | 200 |
 | POST | `/api/v1/networks/forget` | Remove a saved network by SSID | 200 |
 | GET | `/api/v1/version` | Get service version | 200 |
+| GET | `/api/v1/service-info` | Service capabilities (BLE enabled, iface, version) | 200 |
+
+The `service-info` response reports whether BLE provisioning is enabled for this
+instance:
+
+```json
+{ "status": "ok", "ble_enabled": true, "interface_name": "wlan0", "version": "0.2.0" }
+```
 
 ### Error Responses
 
@@ -237,6 +245,9 @@ curl --unix-socket $SOCK http://localhost/api/v1/status
 
 # Get version
 curl --unix-socket $SOCK http://localhost/api/v1/version
+
+# Get service info (is BLE provisioning enabled?)
+curl --unix-socket $SOCK http://localhost/api/v1/service-info
 
 # Disconnect
 curl -X POST --unix-socket $SOCK http://localhost/api/v1/disconnect

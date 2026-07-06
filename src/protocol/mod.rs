@@ -9,7 +9,7 @@ pub use {
     request::{ConnectParams, ForgetNetworkParams},
     response::{
         ConnectResponse, DisconnectResponse, ForgetNetworkResponse, Response,
-        SavedNetworksResponse, ScanResultsResponse, ScanStartedResponse, StatusResponse,
-        VersionResponse,
+        SavedNetworksResponse, ScanResultsResponse, ScanStartedResponse, ServiceInfoResponse,
+        StatusResponse, VersionResponse,
     },
 };
