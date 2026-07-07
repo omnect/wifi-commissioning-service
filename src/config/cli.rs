@@ -18,9 +18,9 @@ pub struct CliArgs {
     #[arg(short = 's', long)]
     pub ble_secret: Option<String>,
 
-    /// Disable BLE transport
+    /// Enable BLE transport (requires the `ble` build feature)
     #[arg(long, action = clap::ArgAction::SetTrue)]
-    pub disable_ble: bool,
+    pub enable_ble: bool,
 
     /// Disable Unix socket transport
     #[arg(long, action = clap::ArgAction::SetTrue)]

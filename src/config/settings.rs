@@ -30,10 +30,34 @@ impl From<CliArgs> for Settings {
             interface: args.interface,
             ble_name: args.ble_name,
             ble_secret: args.ble_secret,
-            enable_ble: !args.disable_ble,
+            enable_ble: args.enable_ble,
             enable_unix_socket: !args.disable_unix_socket,
             socket_path,
             socket_mode,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::CliArgs;
+    use clap::Parser;
+
+    #[test]
+    fn ble_off_by_default() {
+        let args = CliArgs::parse_from(["wcs", "--ble-secret", "x"]);
+        let settings: Settings = args.into();
+        assert!(
+            !settings.enable_ble,
+            "BLE must be off unless --enable-ble is given"
+        );
+    }
+
+    #[test]
+    fn enable_ble_flag_turns_ble_on() {
+        let args = CliArgs::parse_from(["wcs", "--ble-secret", "x", "--enable-ble"]);
+        let settings: Settings = args.into();
+        assert!(settings.enable_ble);
     }
 }
