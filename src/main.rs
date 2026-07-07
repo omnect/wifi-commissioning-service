@@ -1,7 +1,9 @@
 //! WiFi Commissioning Service - Main Entry Point
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
+#[cfg(feature = "ble")]
+use std::sync::atomic::Ordering;
 
 use clap::Parser;
 use tracing::{Instrument, error, info, info_span};
@@ -10,8 +12,10 @@ use wifi_commissioning_service::{
     backend::WifiCtrlBackend,
     config::{CliArgs, Settings},
     core::service::WifiCommissioningService,
-    transport::ble::BleAdapter,
 };
+
+#[cfg(feature = "ble")]
+use wifi_commissioning_service::transport::ble::BleAdapter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,6 +39,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!(?args);
     let settings: Settings = args.into();
     info!(?settings);
+
+    #[cfg(not(feature = "ble"))]
+    if settings.enable_ble {
+        error!("--enable-ble was given but this build has no `ble` feature");
+        return Err("BLE support not compiled in".into());
+    }
 
     // Validate configuration
     if !settings.enable_ble && !settings.enable_unix_socket {
@@ -86,6 +96,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Start BLE transport
+    #[cfg(feature = "ble")]
     if settings.enable_ble {
         info!("Starting BLE transport");
 
@@ -200,6 +211,7 @@ fn start_unix_socket_transport(
     Ok(handle)
 }
 
+#[cfg(feature = "ble")]
 async fn start_ble_transport(
     service: Arc<WifiCommissioningService<WifiCtrlBackend>>,
     ble_name: String,
