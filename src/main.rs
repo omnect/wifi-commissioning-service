@@ -40,21 +40,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let settings: Settings = args.into();
     info!(?settings);
 
-    #[cfg(not(feature = "ble"))]
-    if settings.enable_ble {
-        error!("--enable-ble was given but this build has no `ble` feature");
-        return Err("BLE support not compiled in".into());
-    }
-
-    // Validate configuration
-    if !settings.enable_ble && !settings.enable_unix_socket {
-        error!("At least one transport (BLE or Unix socket) must be enabled");
-        return Err("No transport enabled".into());
-    }
-
-    if settings.enable_ble && settings.ble_secret.is_none() {
-        error!("BLE transport requires --ble-secret");
-        return Err("BLE secret not provided".into());
+    if let Err(e) = validate_config(
+        cfg!(feature = "ble"),
+        settings.enable_ble,
+        settings.enable_unix_socket,
+        settings.ble_secret.is_some(),
+    ) {
+        error!("{}", e.log_message());
+        return Err(e.reason().into());
     }
 
     // Create WiFi backend
@@ -184,6 +177,101 @@ async fn shutdown_signal() {
 async fn shutdown_signal() {
     // On non-Unix platforms, just wait forever
     std::future::pending::<()>().await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn enable_ble_on_no_ble_build_is_rejected() {
+        assert_eq!(
+            validate_config(false, true, true, true),
+            Err(ConfigError::BleRequestedButNotCompiled)
+        );
+    }
+
+    #[test]
+    fn enable_ble_on_ble_build_is_ok() {
+        assert_eq!(validate_config(true, true, true, true), Ok(()));
+    }
+
+    #[test]
+    fn no_transport_is_rejected_regardless_of_ble_feature() {
+        assert_eq!(
+            validate_config(true, false, false, false),
+            Err(ConfigError::NoTransportEnabled)
+        );
+        assert_eq!(
+            validate_config(false, false, false, false),
+            Err(ConfigError::NoTransportEnabled)
+        );
+    }
+
+    #[test]
+    fn unix_socket_only_needs_no_ble_feature_or_secret() {
+        assert_eq!(validate_config(false, false, true, false), Ok(()));
+        assert_eq!(validate_config(true, false, true, false), Ok(()));
+    }
+
+    #[test]
+    fn ble_without_secret_is_rejected() {
+        assert_eq!(
+            validate_config(true, true, true, false),
+            Err(ConfigError::BleSecretMissing)
+        );
+    }
+}
+
+/// Invalid transport/feature combination detected before startup.
+#[derive(Debug, PartialEq, Eq)]
+enum ConfigError {
+    BleRequestedButNotCompiled,
+    NoTransportEnabled,
+    BleSecretMissing,
+}
+
+impl ConfigError {
+    fn log_message(&self) -> &'static str {
+        match self {
+            Self::BleRequestedButNotCompiled => {
+                "--enable-ble was given but this build has no `ble` feature"
+            }
+            Self::NoTransportEnabled => {
+                "At least one transport (BLE or Unix socket) must be enabled"
+            }
+            Self::BleSecretMissing => "BLE transport requires --ble-secret",
+        }
+    }
+
+    fn reason(&self) -> &'static str {
+        match self {
+            Self::BleRequestedButNotCompiled => "BLE support not compiled in",
+            Self::NoTransportEnabled => "No transport enabled",
+            Self::BleSecretMissing => "BLE secret not provided",
+        }
+    }
+}
+
+/// Reject transport/feature combinations that cannot run. `ble_compiled` is
+/// `cfg!(feature = "ble")` at the call site, passed in so the check is testable
+/// in both build configurations.
+fn validate_config(
+    ble_compiled: bool,
+    enable_ble: bool,
+    enable_unix_socket: bool,
+    ble_secret_present: bool,
+) -> Result<(), ConfigError> {
+    if enable_ble && !ble_compiled {
+        return Err(ConfigError::BleRequestedButNotCompiled);
+    }
+    if !enable_ble && !enable_unix_socket {
+        return Err(ConfigError::NoTransportEnabled);
+    }
+    if enable_ble && !ble_secret_present {
+        return Err(ConfigError::BleSecretMissing);
+    }
+    Ok(())
 }
 
 fn start_unix_socket_transport(
