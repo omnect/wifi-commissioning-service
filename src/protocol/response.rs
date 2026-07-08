@@ -162,11 +162,12 @@ mod tests {
     #[test]
     fn test_scan_started_response() {
         let response = ScanStartedResponse::ok(ScanState::Scanning);
-        let json = serde_json::to_string(&response).unwrap();
+        let json = serde_json::to_string(&response).expect("serialize response to JSON");
         assert!(json.contains(r#""status":"ok""#));
         assert!(json.contains(r#""state":"scanning""#));
 
-        let deserialized: ScanStartedResponse = serde_json::from_str(&json).unwrap();
+        let deserialized: ScanStartedResponse =
+            serde_json::from_str(&json).expect("deserialize ScanStartedResponse");
         assert_eq!(deserialized, response);
     }
 
@@ -180,12 +181,13 @@ mod tests {
         }];
 
         let response = ScanResultsResponse::ok(ScanState::Finished, networks.clone());
-        let json = serde_json::to_string(&response).unwrap();
+        let json = serde_json::to_string(&response).expect("serialize response to JSON");
         assert!(json.contains(r#""status":"ok""#));
         assert!(json.contains(r#""state":"finished""#));
         assert!(json.contains(r#""TestNet""#));
 
-        let deserialized: ScanResultsResponse = serde_json::from_str(&json).unwrap();
+        let deserialized: ScanResultsResponse =
+            serde_json::from_str(&json).expect("deserialize ScanResultsResponse");
         assert_eq!(deserialized.state, ScanState::Finished);
         assert_eq!(deserialized.networks.len(), 1);
         assert_eq!(deserialized.networks[0].ssid, "TestNet");
@@ -194,7 +196,7 @@ mod tests {
     #[test]
     fn test_connect_response() {
         let response = ConnectResponse::ok(ConnectionState::Connecting);
-        let json = serde_json::to_string(&response).unwrap();
+        let json = serde_json::to_string(&response).expect("serialize response to JSON");
         assert!(json.contains(r#""status":"ok""#));
         assert!(json.contains(r#""state":"connecting""#));
     }
@@ -202,31 +204,33 @@ mod tests {
     #[test]
     fn test_disconnect_response() {
         let response = DisconnectResponse::ok();
-        let json = serde_json::to_string(&response).unwrap();
+        let json = serde_json::to_string(&response).expect("serialize response to JSON");
         assert_eq!(json, r#"{"status":"ok"}"#);
     }
 
     #[test]
     fn test_version_response() {
         let response = VersionResponse::ok("1.0.0".to_string());
-        let json = serde_json::to_string(&response).unwrap();
+        let json = serde_json::to_string(&response).expect("serialize response to JSON");
         assert!(json.contains(r#""status":"ok""#));
         assert!(json.contains(r#""version":"1.0.0""#));
 
-        let deserialized: VersionResponse = serde_json::from_str(&json).unwrap();
+        let deserialized: VersionResponse =
+            serde_json::from_str(&json).expect("deserialize VersionResponse");
         assert_eq!(deserialized, response);
     }
 
     #[test]
     fn test_service_info_response() {
         let response = ServiceInfoResponse::ok(true, "wlan0", "1.0.0");
-        let json = serde_json::to_string(&response).unwrap();
+        let json = serde_json::to_string(&response).expect("serialize response to JSON");
         assert!(json.contains(r#""status":"ok""#));
         assert!(json.contains(r#""ble_enabled":true"#));
         assert!(json.contains(r#""interface_name":"wlan0""#));
         assert!(json.contains(r#""version":"1.0.0""#));
 
-        let deserialized: ServiceInfoResponse = serde_json::from_str(&json).unwrap();
+        let deserialized: ServiceInfoResponse =
+            serde_json::from_str(&json).expect("deserialize ServiceInfoResponse");
         assert_eq!(deserialized, response);
     }
 
@@ -239,7 +243,7 @@ mod tests {
         };
 
         let response = StatusResponse::ok(connection, "wlan0");
-        let json = serde_json::to_string(&response).unwrap();
+        let json = serde_json::to_string(&response).expect("serialize response to JSON");
         assert!(json.contains(r#""status":"ok""#));
         assert!(json.contains(r#""state":"connected""#));
         assert!(json.contains(r#""MyNetwork""#));

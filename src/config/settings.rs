@@ -46,7 +46,7 @@ mod tests {
 
     #[test]
     fn ble_off_by_default() {
-        let args = CliArgs::parse_from(["wcs", "--ble-secret", "x"]);
+        let args = CliArgs::parse_from(["wcs"]);
         let settings: Settings = args.into();
         assert!(
             !settings.enable_ble,
@@ -56,7 +56,7 @@ mod tests {
 
     #[test]
     fn enable_ble_flag_turns_ble_on() {
-        let args = CliArgs::parse_from(["wcs", "--ble-secret", "x", "--enable-ble"]);
+        let args = CliArgs::parse_from(["wcs", "--enable-ble"]);
         let settings: Settings = args.into();
         assert!(settings.enable_ble);
     }
