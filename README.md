@@ -76,20 +76,22 @@ src/
 ### Requirements
 
 - Rust 2024 edition
-- `libdbus-1-dev` (for BLE support)
+- `libdbus-1-dev` (only for the `ble` feature)
 - `wpa_supplicant` running on target interface
 
 ### Compile
 
+BLE is off by default and only compiled in with the `ble` feature.
+
 ```bash
-# Development build
+# Development build (Unix socket only)
 cargo build
 
 # Release build with optimizations
 cargo build --release
 
-# With systemd integration
-cargo build --release --features systemd
+# With BLE transport and systemd integration (features combine)
+cargo build --release --features "ble systemd"
 ```
 
 ### Testing
@@ -116,24 +118,26 @@ wifi-commissioning-service --help
 
 ### Examples
 
-**Both transports (default):**
+BLE is off by default; enabling it needs a build with `--features ble` (see [Compile](#compile)) plus `--enable-ble` at runtime.
+
+**Unix socket only (default):**
 ```bash
-sudo ./wifi-commissioning-service -s "my-device-secret"
+sudo ./wifi-commissioning-service
+```
+
+**Both transports:**
+```bash
+sudo ./wifi-commissioning-service -s "my-device-secret" --enable-ble
 ```
 
 **BLE only:**
 ```bash
-sudo ./wifi-commissioning-service -s "my-device-secret" --disable-unix-socket
-```
-
-**Unix socket only:**
-```bash
-sudo ./wifi-commissioning-service --disable-ble
+sudo ./wifi-commissioning-service -s "my-device-secret" --enable-ble --disable-unix-socket
 ```
 
 **Custom interface:**
 ```bash
-sudo ./wifi-commissioning-service -i wlp2s0 -s "my-device-secret"
+sudo ./wifi-commissioning-service -i wlp2s0
 ```
 
 ### Graceful Shutdown
