@@ -221,6 +221,39 @@ mod tests {
             Err(ConfigError::BleSecretMissing)
         );
     }
+
+    #[test]
+    fn ble_only_with_secret_is_ok() {
+        assert_eq!(validate_config(true, true, false, true), Ok(()));
+    }
+
+    #[test]
+    fn config_error_messages_match_their_variant() {
+        assert_eq!(
+            ConfigError::BleRequestedButNotCompiled.log_message(),
+            "--enable-ble was given but this build has no `ble` feature"
+        );
+        assert_eq!(
+            ConfigError::BleRequestedButNotCompiled.reason(),
+            "BLE support not compiled in"
+        );
+        assert_eq!(
+            ConfigError::NoTransportEnabled.log_message(),
+            "At least one transport (BLE or Unix socket) must be enabled"
+        );
+        assert_eq!(
+            ConfigError::NoTransportEnabled.reason(),
+            "No transport enabled"
+        );
+        assert_eq!(
+            ConfigError::BleSecretMissing.log_message(),
+            "BLE transport requires --ble-secret"
+        );
+        assert_eq!(
+            ConfigError::BleSecretMissing.reason(),
+            "BLE secret not provided"
+        );
+    }
 }
 
 /// Invalid transport/feature combination detected before startup.
