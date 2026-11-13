@@ -6,7 +6,7 @@ homepage = "https://www.omnect.io/home"
 license = "MIT OR Apache-2.0"
 name = "wifi-commissioning-service"
 repository = "https://github.com/omnect/wifi-commissioning-service"
-version = "0.2.1"
+version = "0.2.2"
 
 [[bin]]
 name = "wifi-commissioning-service"
@@ -17,7 +17,7 @@ name = "wifi_commissioning_service"
 path = "src/lib.rs"
 
 [dependencies]
-actix-web = { version = "4.14", default-features = false, features = ["macros"] }
+actix-web = { version = "4.19", default-features = false, features = ["macros"] }
 bluer = { version = "0.17", default-features = false, features = ["bluetoothd"], optional = true }
 clap = { version = "4.6", default-features = false, features = ["derive", "std"] }
 futures = { version = "0.3", default-features = false }

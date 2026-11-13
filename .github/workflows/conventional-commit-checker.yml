@@ -1,0 +1,23 @@
+name: CI
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - reopened
+      - edited
+      - synchronize
+permissions:
+  pull-requests: read
+jobs:
+  lint-pr:
+    runs-on: ubuntu-latest
+    steps:
+      # check for the most recent release: https://github.com/CondeNast/conventional-pull-request-action/releases
+      - uses: CondeNast/conventional-pull-request-action@3ce30fdb4d2beef8b941f23a1114dd8188eba082 # v0.2.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # squash merge uses the PR title as commit subject, so only the title is linted
+          ignoreCommits: "true"
