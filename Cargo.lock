@@ -1769,7 +1769,7 @@ dependencies = [
 
 [[package]]
 name = "wifi-commissioning-service"
-version = "0.2.3"
+version = "0.2.4"
 dependencies = [
  "actix-web",
  "bluer",

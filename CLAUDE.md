@@ -31,13 +31,14 @@ Manual API test: `examples/unix-socket-client/wifi-client.sh <command>`
 
 ## Breaking UDS API changes
 
-Edge modules use the Unix socket API of this service. Before `gh pr create`
-or a PR title change, check the PR diff for a breaking API change as defined
-in [README.md, "Breaking changes"](README.md#breaking-changes). If it is
+Edge modules use the Unix socket API of this service. Before `gh pr create`,
+a PR title change or a merge with its own subject, check the PR diff for a
+breaking API change as defined in
+[README.md, "Breaking changes"](README.md#breaking-changes). If it is
 breaking:
 
-- put `!` in the PR title (e.g. `feat!: ...`); the release notes take it
-  from there,
+- put `!` in the PR title or merge subject (e.g. `feat!: ...`); the release
+  notes take it from there,
 - bump at least the minor version while on 0.x,
 - describe the old and new format in the PR description.
 
@@ -45,6 +46,10 @@ The hook `.claude/hooks/uds-api-guard.sh` blocks the PR command until this
 is decided. It checks changes in `src/` and in the socket and service units.
 If the change is not breaking, put `UDS_API_BREAKING=no` directly before `gh`
 and tell the user why.
+
+The paths it checks are set in `.claude/settings.json`. The files in
+`.claude/hooks/` are the same in `omnect-device-service`: change both
+repos the same way, and run `.claude/hooks/test-uds-api-guard.sh`.
 
 Check again after each push to an open PR that changes these files, and fix
 the title if needed. The hook does not run on `git push`.
